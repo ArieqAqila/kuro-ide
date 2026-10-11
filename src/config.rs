@@ -123,6 +123,21 @@ impl Default for UiConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SyncConfig {
+    /// Keep every terminal that has the same file open in step (unsaved edits included).
+    pub enabled: bool,
+    /// Files bigger than this many MiB are opened without live sync.
+    pub max_file_mib: u64,
+}
+
+impl Default for SyncConfig {
+    fn default() -> Self {
+        Self { enabled: true, max_file_mib: 5 }
+    }
+}
+
 /// Colour roles mapped to ANSI palette slots: 0-15, or -1 for "default foreground".
 /// The actual colours come from the terminal's theme.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -168,6 +183,7 @@ pub struct Config {
     pub find: FindConfig,
     pub sql: SqlConfig,
     pub ui: UiConfig,
+    pub sync: SyncConfig,
     pub colors: ColorsConfig,
 }
 
@@ -247,6 +263,7 @@ impl Config {
             find: section(&table, "find", &mut warnings),
             sql: section(&table, "sql", &mut warnings),
             ui: section(&table, "ui", &mut warnings),
+            sync: section(&table, "sync", &mut warnings),
             colors: section(&table, "colors", &mut warnings),
         };
         cfg.validate(&mut warnings);

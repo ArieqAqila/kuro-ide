@@ -142,6 +142,11 @@ impl SyncHandle {
         Ok(SyncHandle { initial_text, client_id, core })
     }
 
+    /// Unsaved changes anywhere in the shared document.
+    pub fn is_modified(&self) -> bool {
+        self.core.node.as_ref().is_some_and(|n| n.replica.is_modified())
+    }
+
     pub fn is_leader(&self) -> bool {
         self.core.node.as_ref().is_some_and(|n| n.is_leader())
     }

@@ -5,6 +5,8 @@ use ropey::Rope;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use crate::sync::ot::Op;
+
 #[derive(Debug, Clone)]
 struct Edit {
     pos: usize,
@@ -34,6 +36,11 @@ pub struct Buffer {
     /// While set, every edit is refused (and recorded in `blocked_attempt`).
     pub read_only: bool,
     pub blocked_attempt: bool,
+    /// Live-synced buffer: edits are also queued in `outbox` for the sync group, undo/redo/save and the
+    /// modified flag belong to the shared document.
+    pub synced: bool,
+    outbox: Vec<Op>,
+    sync_modified: bool,
 }
 
 pub fn is_word_char(c: char) -> bool {
@@ -80,6 +87,9 @@ impl Buffer {
             crlf,
             read_only: false,
             blocked_attempt: false,
+            synced: false,
+            outbox: vec![],
+            sync_modified: false,
         }
     }
 
@@ -107,7 +117,49 @@ impl Buffer {
     }
 
     pub fn is_modified(&self) -> bool {
-        self.version != self.saved_version
+        if self.synced { self.sync_modified } else { self.version != self.saved_version }
+    }
+
+    pub fn set_sync_modified(&mut self, m: bool) {
+        self.sync_modified = m;
+    }
+
+    /// Operations made since the last call, for the sync group.
+    pub fn take_ops(&mut self) -> Vec<Op> {
+        std::mem::take(&mut self.outbox)
+    }
+
+    /// Apply operations made elsewhere (not undoable here), keeping the cursor and selection on the same text.
+    /// `focus` moves the cursor there instead (the result of this terminal's own undo or redo).
+    pub fn apply_remote(&mut self, ops: &[Op], focus: Option<usize>) {
+        use crate::sync::ot::transform_pos;
+        for op in ops {
+            match op {
+                Op::Ins { pos, text } => self.rope.insert((*pos).min(self.len_chars()), text),
+                Op::Del { pos, text } => {
+                    let n = text.chars().count();
+                    let a = (*pos).min(self.len_chars());
+                    self.rope.remove(a..(a + n).min(self.len_chars()));
+                }
+                Op::Mark => continue,
+            }
+            self.cursor = transform_pos(self.cursor, op, false);
+            self.anchor = self.anchor.map(|a| transform_pos(a, op, false));
+        }
+        if let Some(f) = focus {
+            self.cursor = f;
+            self.anchor = None;
+        }
+        self.cursor = self.cursor.min(self.len_chars());
+        self.version += 1;
+    }
+
+    /// Replace the whole text without recording an undo step (re-sync with the group).
+    pub fn replace_all_remote(&mut self, text: &str) {
+        self.rope = Rope::from_str(text);
+        self.cursor = self.cursor.min(self.len_chars());
+        self.anchor = None;
+        self.version += 1;
     }
 
     // ---- reading -------------------------------------------------------
@@ -190,6 +242,9 @@ impl Buffer {
 
     /// Next edit starts a new undo step.
     pub fn break_group(&mut self) {
+        if self.synced && self.open {
+            self.outbox.push(Op::Mark);
+        }
         self.open = false;
     }
 
@@ -203,6 +258,9 @@ impl Buffer {
         }
         let pos = pos.min(self.len_chars());
         self.rope.insert(pos, s);
+        if self.synced {
+            self.outbox.push(Op::Ins { pos, text: s.to_string() });
+        }
         self.record(Edit { pos, removed: String::new(), inserted: s.to_string() });
     }
 
@@ -217,6 +275,9 @@ impl Buffer {
         }
         let removed = self.rope.slice(r.clone()).to_string();
         self.rope.remove(r.clone());
+        if self.synced {
+            self.outbox.push(Op::Del { pos: r.start, text: removed.clone() });
+        }
         self.record(Edit { pos: r.start, removed: removed.clone(), inserted: String::new() });
         removed
     }

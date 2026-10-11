@@ -143,6 +143,9 @@ fn main() -> Result<()> {
         let _ = execute!(stdout(), PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES));
     }
     app.set_kitty(kitty);
+    if cfg.sync.enabled {
+        app.set_sync_options(kuro::sync::net::SyncOptions::from_env(cfg.sync.max_file_mib.saturating_mul(1024 * 1024)));
+    }
     if let Some(f) = &args.file {
         app.open_file(f);
     }

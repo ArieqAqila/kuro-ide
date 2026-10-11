@@ -191,6 +191,23 @@ Initial state of the find-bar toggles (they can still be flipped with Alt+C / Al
 - Use the kitty keyboard protocol so that Ctrl+Enter, Shift+Tab, Ctrl+Shift+Z, a bare Esc and Alt+letter can be told apart from other keys. `auto` asks the terminal at startup (a short, bounded query) and falls back to legacy keys if it does not answer; `on` assumes support without asking; `off` never uses it. Without the protocol Ctrl+Enter cannot be sent, so use `sql.run_fallback_key`.
 - **Example:** `kitty_keyboard = "off"`
 
+## `[sync]`
+
+Live sync keeps every kuro terminal that has the same file open in step, unsaved edits included (like several
+VS Code tabs of one file). See [SYNC.md](SYNC.md).
+
+### `sync.enabled`
+- **Type:** boolean
+- **Default:** `true`
+- Turn live sync on or off. When off, every terminal edits its own copy and saving still refuses to overwrite a file that changed on disk behind your back.
+- **Example:** `enabled = false`
+
+### `sync.max_file_mib`
+- **Type:** integer (MiB)
+- **Default:** `5`
+- Files bigger than this open without live sync (the status bar says `local`), because every terminal keeps a full copy and an edit history of the text.
+- **Example:** `max_file_mib = 20`
+
 ## `[colors]`
 
 kuro never emits RGB, 256-colour or background colours. Every text colour is a **role** mapped to one of the

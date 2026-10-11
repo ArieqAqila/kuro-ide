@@ -37,6 +37,10 @@ block_editing_when_disconnected = true
 syntax_highlight = true
 kitty_keyboard = "auto"     # auto | on | off
 
+[sync]
+enabled = true              # keep terminals that have the same file open in step
+max_file_mib = 5            # bigger files open without live sync
+
 [colors]
 # Roles -> ANSI palette slot: 0-7 normal, 8-15 bright, -1 = default foreground.
 # The real colours come from your terminal theme.

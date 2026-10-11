@@ -12,6 +12,10 @@ use crate::picker::{self, Picker, PickerItem, PickerKind};
 use crate::secret::{CacheKey, PasswordCache, Secret};
 use crate::sql::{self, DbError, ResultSet, Session, profile, stmt};
 use crate::suggest::{self, Suggestions};
+use crate::sync::net::{StartError, SyncEvent, SyncHandle, SyncOptions};
+use crate::sync::node::State as SyncState;
+use crate::sync::ot;
+use crate::sync::replica::Effect as SyncEffect;
 use crate::syntax::{self, Kind, LangSpec};
 use crate::table::{self, TableOpts, TableState};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -144,6 +148,11 @@ pub struct App {
     /// Time source for click timing; tests replace it with a manual clock.
     clock: std::sync::Arc<dyn Fn() -> Instant + Send + Sync>,
     pub quit: bool,
+    /// Live sync with the other terminals that have this file open (when enabled and started).
+    pub sync: Option<SyncHandle>,
+    sync_opts: Option<SyncOptions>,
+    /// Quit as soon as the save the user just asked for is confirmed.
+    quit_after_save: bool,
     pub syn: Option<SynCache>,
     pub lang: &'static LangSpec,
     /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
@@ -258,6 +267,9 @@ impl App {
             area: Rect::new(0, 0, 80, 24),
             clock: std::sync::Arc::new(Instant::now),
             quit: false,
+            sync: None,
+            sync_opts: None,
+            quit_after_save: false,
             syn: None,
             lang,
             lang_override: None,
@@ -794,6 +806,16 @@ impl App {
     }
 
     fn undo(&mut self) {
+        if self.sync.is_some() {
+            self.sync_pump();
+            if let Some(h) = self.sync.as_mut() {
+                h.undo();
+            }
+            self.sync_pump();
+            self.leave_visual();
+            self.clamp_normal();
+            return;
+        }
         if !self.buffer.undo() {
             self.flash("already at oldest change");
         }
@@ -802,6 +824,16 @@ impl App {
     }
 
     fn redo(&mut self) {
+        if self.sync.is_some() {
+            self.sync_pump();
+            if let Some(h) = self.sync.as_mut() {
+                h.redo();
+            }
+            self.sync_pump();
+            self.leave_visual();
+            self.clamp_normal();
+            return;
+        }
         if !self.buffer.redo() {
             self.flash("already at newest change");
         }
@@ -810,6 +842,18 @@ impl App {
     }
 
     pub fn save(&mut self) {
+        self.save_with(false);
+    }
+
+    fn save_with(&mut self, force: bool) {
+        if self.sync.is_some() {
+            self.sync_pump();
+            if let Some(h) = self.sync.as_mut() {
+                h.save(force);
+            }
+            self.sync_pump();
+            return;
+        }
         match self.buffer.path.clone() {
             None => self.open_prompt("w "),
             Some(p) => match self.buffer.save() {
@@ -819,7 +863,23 @@ impl App {
         }
     }
 
+    fn save_and_quit(&mut self) {
+        self.save();
+        self.sync_pump();
+        if self.sync.is_some() {
+            // a follower's save is confirmed a moment later
+            if self.buffer.is_modified() {
+                self.quit_after_save = true;
+            } else {
+                self.quit = true;
+            }
+        } else if !self.buffer.is_modified() {
+            self.quit = true;
+        }
+    }
+
     fn request_quit(&mut self) {
+        self.sync_pump();
         if self.buffer.is_modified() {
             let name = self.buffer.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "[No Name]".into());
             self.confirm = Some(format!("Save changes to {name} before quitting? [y]es / [n]o / [c]ancel"));
@@ -834,10 +894,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 self.confirm = None;
                 self.focus = Focus::Editor;
-                self.save();
-                if !self.buffer.is_modified() {
-                    self.quit = true;
-                }
+                self.save_and_quit();
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 self.confirm = None;
@@ -1760,9 +1817,16 @@ impl App {
         let (cmd, arg) = line.split_once(char::is_whitespace).map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
         match cmd {
             "" => {}
+            "w!" | "write!" if arg.is_empty() => self.save_with(true),
             "w" | "write" => {
                 if arg.is_empty() {
                     self.save()
+                } else if self.sync.is_some() {
+                    let copy = self.buffer.text();
+                    match std::fs::write(arg, copy) {
+                        Ok(()) => self.flash(format!("copy written to \"{arg}\" (live sync stays with the original file)")),
+                        Err(e) => self.flash(format!("cannot write {arg}: {e}")),
+                    }
                 } else {
                     match self.buffer.save_as(&PathBuf::from(arg)) {
                         Ok(n) => {
@@ -1781,12 +1845,7 @@ impl App {
                 }
             }
             "q!" | "quit!" => self.quit = true,
-            "wq" | "x" => {
-                self.save();
-                if !self.buffer.is_modified() {
-                    self.quit = true;
-                }
-            }
+            "wq" | "x" => self.save_and_quit(),
             "e" | "edit" => {
                 if arg.is_empty() {
                     return self.flash("usage: :e FILE");
@@ -1818,20 +1877,123 @@ impl App {
         }
     }
 
+    /// Turn live sync on for files opened from now on (the caller decides from `sync.enabled`).
+    pub fn set_sync_options(&mut self, opts: SyncOptions) {
+        self.sync_opts = Some(opts);
+    }
+
     pub fn open_file(&mut self, path: &std::path::Path) {
-        match Buffer::load(path) {
-            Ok(b) => self.buffer = b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                self.buffer = Buffer::new();
-                self.buffer.path = Some(path.to_path_buf());
-                self.flash(format!("\"{}\" [New File]", path.display()));
+        // leave the previous file's sync group first (flushes its journal)
+        self.sync = None;
+        let mut note: Option<String> = None;
+        let mut synced: Option<SyncHandle> = None;
+        if let Some(opts) = self.sync_opts.clone() {
+            match std::fs::read(path) {
+                Ok(bytes) if bytes.contains(&b'\r') => note = Some("CRLF file: opened without live sync".into()),
+                Ok(_) => match SyncHandle::start(path, opts, std::sync::Arc::new(|| {})) {
+                    Ok(h) => synced = Some(h),
+                    Err(StartError::TooLarge(n)) => {
+                        note = Some(format!("file is {:.1} MiB (sync.max_file_mib): opened without live sync", n as f64 / 1048576.0));
+                    }
+                    Err(StartError::NotUtf8) => note = Some("not valid UTF-8: opened without live sync".into()),
+                    Err(e) => {
+                        note = Some(format!("live sync unavailable ({e}): editing locally"));
+                    }
+                },
+                Err(_) => {}
             }
-            Err(e) => return self.flash(format!("cannot open {}: {e}", path.display())),
+        }
+        if let Some(h) = synced {
+            let mut b = Buffer::from_str(&h.initial_text);
+            b.path = Some(path.to_path_buf());
+            b.synced = true;
+            self.buffer = b;
+            self.sync = Some(h);
+        } else {
+            match Buffer::load(path) {
+                Ok(b) => self.buffer = b,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    self.buffer = Buffer::new();
+                    self.buffer.path = Some(path.to_path_buf());
+                    self.flash(format!("\"{}\" [New File]", path.display()));
+                }
+                Err(e) => return self.flash(format!("cannot open {}: {e}", path.display())),
+            }
+            if let Some(n) = note {
+                self.flash(n);
+            }
         }
         self.update_lang();
         self.top_line = 0;
         self.left_col = 0;
         self.syn = None;
+    }
+
+    /// What the status bar says about live sync (nothing when sync was never asked for).
+    pub fn sync_label(&self) -> Option<&'static str> {
+        match &self.sync {
+            Some(h) => Some(match h.state() {
+                SyncState::Live => "sync",
+                SyncState::Electing => "sync: re-connecting",
+                SyncState::Standalone => "local (sync lost)",
+            }),
+            None if self.sync_opts.is_some() && self.buffer.path.is_some() => Some("local"),
+            None => None,
+        }
+    }
+
+    /// Hand local edits to the sync group and apply what the other terminals did. Returns whether anything
+    /// on screen may have changed.
+    pub fn sync_pump(&mut self) -> bool {
+        let Some(mut h) = self.sync.take() else { return false };
+        let ops = self.buffer.take_ops();
+        if !ops.is_empty() {
+            h.local(ops);
+        }
+        let events = h.poll();
+        let changed = !events.is_empty();
+        for ev in events {
+            match ev {
+                SyncEvent::Editor(e) => self.apply_sync_effect(e),
+                SyncEvent::Notice(n) => self.flash(n),
+                SyncEvent::Status { .. } => {}
+            }
+        }
+        self.buffer.set_sync_modified(h.is_modified());
+        self.sync = Some(h);
+        if self.quit_after_save && !self.buffer.is_modified() {
+            self.quit = true;
+        }
+        changed
+    }
+
+    fn apply_sync_effect(&mut self, e: SyncEffect) {
+        match e {
+            SyncEffect::Apply { ops, focus, .. } => {
+                // keep the same text at the top of the screen
+                let top = self.buffer.line_start(self.top_line);
+                let top = ops.iter().fold(top, |p, op| ot::transform_pos(p, op, false));
+                self.buffer.apply_remote(&ops, focus);
+                self.top_line = self.buffer.line_of(top);
+                self.syn = None;
+            }
+            SyncEffect::Replace(text) => {
+                self.buffer.replace_all_remote(&text);
+                self.top_line = self.top_line.min(self.buffer.line_count().saturating_sub(1));
+                self.syn = None;
+            }
+            SyncEffect::Saved { .. } => {
+                let name = self.buffer.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+                self.flash(format!("\"{name}\" {}L written", self.buffer.line_count()));
+            }
+            SyncEffect::SaveRefused(m) | SyncEffect::SaveFailed(m) | SyncEffect::Conflict(m) | SyncEffect::Notice(m) => {
+                self.quit_after_save = false;
+                self.flash(m);
+            }
+            SyncEffect::Reloaded => self.flash("file changed on disk: reloaded"),
+            SyncEffect::NeedResync => self.flash("sync out of step: reconnecting"),
+            SyncEffect::Send(_) => {}
+        }
     }
 
     // ------------------------------------------------------------------
@@ -2029,7 +2191,7 @@ impl App {
 
     /// Poll background work (connect results, finished queries). Call regularly.
     pub fn tick(&mut self) -> bool {
-        let mut changed = false;
+        let mut changed = self.sync_pump();
         if let Some(c) = &self.sql.connecting {
             match c.rx.try_recv() {
                 Ok(Ok(sess)) => {

@@ -8,7 +8,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-pub trait Clipboard {
+pub trait Clipboard: Send {
     fn get(&mut self) -> Result<String, String>;
     fn set(&mut self, text: &str) -> Result<(), String>;
     fn name(&self) -> &'static str;

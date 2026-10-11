@@ -266,6 +266,9 @@ impl App {
         if self.cfg.sql.result_view == "tab" && self.sql.result.is_some() && !self.sql.tab_active {
             right.push_str("F4 results  │  ");
         }
+        if let Some(l) = self.sync_label() {
+            right.push_str(&format!("{l}  │  "));
+        }
         if let Some(sel) = self.selection_range() {
             right.push_str(&format!("{} selected  │  ", sel.end - sel.start));
         }
