@@ -405,6 +405,25 @@ pub static JSON: LangSpec = LangSpec {
 
 pub static LANGS: &[&LangSpec] = &[&SQL, &GO, &PYTHON, &SHELL, &JSON];
 
+/// Every selectable mode: Plain Text first, then the languages.
+pub fn all_modes() -> Vec<&'static LangSpec> {
+    std::iter::once(&PLAIN).chain(LANGS.iter().copied()).collect()
+}
+
+/// Look a mode up by name or common alias, ignoring case (`:setlang`).
+pub fn by_name(name: &str) -> Option<&'static LangSpec> {
+    let n = name.trim().to_ascii_lowercase();
+    let alias = match n.as_str() {
+        "text" | "plain" | "plaintext" | "txt" | "none" => "plain text",
+        "sh" | "bash" | "zsh" | "fish" | "ksh" => "shell",
+        "golang" => "go",
+        "py" | "python3" => "python",
+        "postgres" | "postgresql" | "mysql" | "mariadb" => "sql",
+        other => other,
+    };
+    all_modes().into_iter().find(|l| l.name.to_ascii_lowercase() == alias)
+}
+
 pub fn detect(path: Option<&Path>, first_line: &str) -> &'static LangSpec {
     if let Some(p) = path {
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -742,6 +761,22 @@ mod tests {
         assert_eq!(detect(None, "#!/bin/bash").name, "Shell");
         assert_eq!(detect(Some(Path::new("script")), "#!/usr/bin/fish").name, "Shell");
         assert_eq!(detect(None, "#!/usr/bin/perl").name, "Plain Text");
+    }
+
+    #[test]
+    fn by_name_finds_modes_and_aliases_ignoring_case() {
+        assert_eq!(by_name("go").unwrap().name, "Go");
+        assert_eq!(by_name("GOLANG").unwrap().name, "Go");
+        assert_eq!(by_name("Python").unwrap().name, "Python");
+        assert_eq!(by_name("py").unwrap().name, "Python");
+        assert_eq!(by_name("fish").unwrap().name, "Shell");
+        assert_eq!(by_name("sql").unwrap().name, "SQL");
+        assert_eq!(by_name("json").unwrap().name, "JSON");
+        assert_eq!(by_name("plain").unwrap().name, "Plain Text");
+        assert_eq!(by_name("Plain Text").unwrap().name, "Plain Text");
+        assert!(by_name("klingon").is_none());
+        assert!(by_name("").is_none());
+        assert_eq!(all_modes().len(), LANGS.len() + 1);
     }
 
     #[test]

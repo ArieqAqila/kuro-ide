@@ -91,7 +91,12 @@ impl App {
         }
         self.render_status(buf, l.status);
         let pc = self.render_cmd(buf, l.cmd);
+        let picker_cursor = match &self.picker {
+            Some(p) if self.focus == Focus::Picker => crate::picker::render(buf, area, p),
+            _ => None,
+        };
         match self.focus {
+            Focus::Picker => picker_cursor,
             Focus::Prompt => pc,
             Focus::Table | Focus::Confirm => None,
             Focus::Find => cursor,
@@ -228,7 +233,8 @@ impl App {
         if let Some(sel) = self.selection_range() {
             right.push_str(&format!("{} selected  │  ", sel.end - sel.start));
         }
-        right.push_str(&format!("Ln {}, Col {}  │  {}", line + 1, col + 1, self.lang.name));
+        let manual = if self.lang_override.is_some() { " (manual)" } else { "" };
+        right.push_str(&format!("Ln {}, Col {}  │  {}{manual}", line + 1, col + 1, self.lang.name));
         let rw = table::display_width(&right);
         let mode = self.mode_label();
         let mut x = r.x;

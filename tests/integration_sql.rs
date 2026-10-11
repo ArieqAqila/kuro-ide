@@ -86,6 +86,8 @@ fn postgres() {
     assert_eq!((e.category, e.code.as_deref()), (Execution, Some("57014")), "{e}");
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
 
+    check_snippets(&mut s, Engine::Postgres);
+
     // connection lost
     c.kill();
     let e = err("postgres", run(&mut s, "SELECT 1"));
@@ -163,6 +165,8 @@ fn mariadb() {
     }
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
 
+    check_snippets(&mut s, Engine::MariaDb);
+
     c.kill();
     let e = err("mariadb", run(&mut s, "SELECT 1"));
     assert_eq!(e.category, Execution, "{e}");
@@ -177,4 +181,35 @@ fn retry_connect(r: &kuro::sql::profile::Resolved) -> kuro::sql::Session {
             Err(_) => std::thread::sleep(Duration::from_secs(1)),
         }
     }
+}
+
+/// Every snippet offered for a driver (and the generic ones) must actually run on that server.
+fn check_snippets(s: &mut kuro::sql::Session, engine: Engine) {
+    use kuro::snippets::{GENERIC, fill, for_engine};
+    let reset = match engine {
+        Engine::Postgres => {
+            "DROP TABLE IF EXISTS t, u, t_new; CREATE TABLE t (id serial PRIMARY KEY, name varchar(100), j jsonb); CREATE TABLE u (id serial PRIMARY KEY, name varchar(100));"
+        }
+        Engine::MariaDb => {
+            "DROP TABLE IF EXISTS t, u, t_new; CREATE TABLE t (id int AUTO_INCREMENT PRIMARY KEY, name varchar(100)); CREATE TABLE u (id int AUTO_INCREMENT PRIMARY KEY, name varchar(100));"
+        }
+    };
+    let (own, generic) = for_engine(Some(engine));
+    assert!(!generic);
+    let mut ran = 0;
+    for sn in GENERIC.iter().chain(own.iter()) {
+        run(s, reset).result.unwrap_or_else(|e| panic!("reset failed: {e}"));
+        let column = if sn.name == "jsonb" { "j" } else { "name" };
+        // creating snippets need a table name that does not exist yet
+        let table = if sn.name.starts_with("create") { "t_new" } else { "t" };
+        let sql = fill(sn.body, table, "u", column, "'x'", "SELECT 1;");
+        let r = run(s, &sql);
+        if let Err(e) = &r.result {
+            record(if engine == Engine::Postgres { "postgres" } else { "mariadb" }, e);
+            panic!("{engine:?} snippet {:?} failed: {e}\n{sql}", sn.name);
+        }
+        ran += 1;
+    }
+    assert!(ran >= GENERIC.len() + own.len());
+    eprintln!("{engine:?}: {ran} snippets executed successfully");
 }

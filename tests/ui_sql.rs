@@ -307,6 +307,9 @@ impl Driver for Fake {
     fn label(&self) -> String {
         "fake://db".into()
     }
+    fn engine(&self) -> kuro::sql::profile::Engine {
+        kuro::sql::profile::Engine::Postgres
+    }
 }
 
 fn connected(text: &str) -> App {

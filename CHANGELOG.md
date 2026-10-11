@@ -23,6 +23,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `src/ansi.rs`: an output filter that rewrites crossterm's `38;5;N` palette colours to the classic `30-37`/`90-97`
   codes, so no 256-colour sequence is ever emitted. `tests/color_rule.rs` and a pty test enforce the colour rule.
 
+- `:setlang <mode>` (and a picker when run without an argument) sets the language mode and recolours immediately;
+  `:setlang auto` returns to detection by extension. The status bar marks a manual mode.
+- SQL snippets per driver (`:snippets` or Alt+S): MariaDB (`SHOW TABLES`, `DESCRIBE`, `LIMIT x, y`, `DATE_ADD`, …),
+  PostgreSQL (`information_schema`, `FETCH FIRST`, `interval`, `ON CONFLICT`, …); with no connection a generic list is
+  shown and says so. The integration tests execute every snippet on real servers.
+
 ### Changed
 - `editor.tab_width` now defaults to `8` (was `4`); `editor.expand_tab` is replaced by `editor.indent_style`.
 - `editor.relative_numbers` now defaults to `false`.

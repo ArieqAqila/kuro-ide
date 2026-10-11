@@ -1,5 +1,5 @@
 use super::classify::{classify_mysql, mysql_position};
-use super::profile::Resolved;
+use super::profile::{Engine, Resolved};
 use super::{Canceller, DbError, Driver, ResultSet};
 use crate::table::Column;
 use ::mysql::prelude::Queryable;
@@ -100,5 +100,9 @@ impl Driver for MyDriver {
 
     fn label(&self) -> String {
         self.label.clone()
+    }
+
+    fn engine(&self) -> Engine {
+        Engine::MariaDb
     }
 }

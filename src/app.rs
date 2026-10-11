@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::find::{next_match, prev_match};
 use crate::findbar::{self, FindBar, TextField, contains};
 use crate::indent::{self, Indent};
+use crate::picker::{self, Picker, PickerItem, PickerKind};
 use crate::sql::{self, DbError, ResultSet, Session, profile};
 use crate::syntax::{self, Kind, LangSpec};
 use crate::table::{self, TableOpts, TableState};
@@ -32,6 +33,7 @@ pub enum Focus {
     Table,
     Prompt,
     Confirm,
+    Picker,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -109,6 +111,9 @@ pub struct App {
     pub quit: bool,
     pub syn: Option<SynCache>,
     pub lang: &'static LangSpec,
+    /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
+    pub lang_override: Option<&'static LangSpec>,
+    pub picker: Option<Picker>,
     pub sql: SqlUi,
     pub warnings: Vec<String>,
 }
@@ -201,9 +206,22 @@ impl App {
             quit: false,
             syn: None,
             lang,
+            lang_override: None,
+            picker: None,
             sql: SqlUi::default(),
             warnings: vec![],
         }
+    }
+
+    /// Re-derive the language: the manual `:setlang` choice wins over detection by extension.
+    pub fn update_lang(&mut self) {
+        self.lang = self.lang_override.unwrap_or_else(|| syntax::detect(self.buffer.path.as_deref(), &first_line(&self.buffer)));
+    }
+
+    pub fn set_lang(&mut self, mode: Option<&'static LangSpec>) {
+        self.lang_override = mode;
+        self.update_lang();
+        self.syn = None; // recolour the whole buffer now
     }
 
     pub fn modal(&self) -> bool {
@@ -467,6 +485,7 @@ impl App {
         match self.focus {
             Focus::Prompt => return self.prompt_key(k),
             Focus::Confirm => return self.confirm_key(k),
+            Focus::Picker => return self.picker_key(k),
             _ => {}
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
@@ -514,6 +533,7 @@ impl App {
                 'c' => return self.copy(),
                 'x' => return self.cut(),
                 'v' => return self.paste(),
+                's' => return self.open_snippets(),
                 _ => {}
             }
         }
@@ -1537,7 +1557,7 @@ impl App {
                 } else {
                     match self.buffer.save_as(&PathBuf::from(arg)) {
                         Ok(n) => {
-                            self.lang = syntax::detect(self.buffer.path.as_deref(), &first_line(&self.buffer));
+                            self.update_lang();
                             self.flash(format!("\"{arg}\" {n}L written"))
                         }
                         Err(e) => self.flash(format!("cannot write {arg}: {e}")),
@@ -1571,6 +1591,8 @@ impl App {
                 let m = if self.warnings.is_empty() { "no config warnings".to_string() } else { self.warnings.join(" | ") };
                 self.flash(m)
             }
+            "setlang" | "setlanguage" => self.exec_setlang(arg),
+            "snippets" | "snippet" => self.open_snippets(),
             "sql" => self.exec_sql(arg),
             n if n.parse::<usize>().is_ok() => {
                 let l = n.parse::<usize>().unwrap().saturating_sub(1);
@@ -1591,7 +1613,7 @@ impl App {
             }
             Err(e) => return self.flash(format!("cannot open {}: {e}", path.display())),
         }
-        self.lang = syntax::detect(self.buffer.path.as_deref(), &first_line(&self.buffer));
+        self.update_lang();
         self.top_line = 0;
         self.left_col = 0;
         self.syn = None;
@@ -1789,6 +1811,139 @@ impl App {
         self.sql.connecting.is_some() || self.sql.session.as_ref().is_some_and(|s| s.is_running())
     }
 
+    // ------------------------------------------------------------------
+    // language mode and snippets (shared picker popup)
+    // ------------------------------------------------------------------
+
+    fn exec_setlang(&mut self, arg: &str) {
+        if arg.is_empty() {
+            return self.open_lang_picker();
+        }
+        if arg.eq_ignore_ascii_case("auto") {
+            self.set_lang(None);
+            return self.flash(format!("language: auto-detected ({})", self.lang.name));
+        }
+        match syntax::by_name(arg) {
+            Some(l) => {
+                self.set_lang(Some(l));
+                self.flash(format!("language: {}", l.name));
+            }
+            None => {
+                let names: Vec<&str> = syntax::all_modes().iter().map(|l| l.name).collect();
+                self.flash(format!("unknown language {arg:?}; use one of: auto, {}", names.join(", ")));
+            }
+        }
+    }
+
+    fn open_lang_picker(&mut self) {
+        let mut items = vec![PickerItem { label: "Auto-detect".into(), detail: "by file extension".into(), value: "auto".into() }];
+        for l in syntax::all_modes() {
+            let exts = if l.extensions.is_empty() {
+                "no highlighting".to_string()
+            } else {
+                l.extensions.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(" ")
+            };
+            let current = if self.lang_override.is_some_and(|o| o.name == l.name) { "  (current)" } else { "" };
+            items.push(PickerItem { label: l.name.to_string(), detail: format!("{exts}{current}"), value: l.name.to_string() });
+        }
+        let note = self.lang_override.map(|l| format!("manual mode: {} (Auto-detect to undo)", l.name));
+        let mut p = Picker::new(PickerKind::Language, "Language mode", note, items);
+        // start on the active choice
+        p.selected = self.lang_override.and_then(|o| p.items.iter().position(|i| i.value == o.name)).unwrap_or(0);
+        self.picker = Some(p);
+        self.focus = Focus::Picker;
+    }
+
+    pub fn open_snippets(&mut self) {
+        let engine = self.sql.session.as_ref().map(|s| s.engine);
+        let (set, generic) = crate::snippets::for_engine(engine);
+        let items = set
+            .iter()
+            .map(|s| PickerItem { label: s.name.to_string(), detail: s.description.to_string(), value: s.body.to_string() })
+            .collect();
+        let (title, note) = match (engine, generic) {
+            (Some(crate::sql::profile::Engine::MariaDb), _) => ("SQL snippets: MariaDB", None),
+            (Some(crate::sql::profile::Engine::Postgres), _) => ("SQL snippets: PostgreSQL", None),
+            (None, _) => {
+                ("SQL snippets: generic", Some("Not connected: showing generic snippets. Connect for driver-specific ones.".to_string()))
+            }
+        };
+        self.picker = Some(Picker::new(PickerKind::Snippet, title, note, items));
+        self.focus = Focus::Picker;
+    }
+
+    fn picker_key(&mut self, k: KeyEvent) {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let Some(p) = &mut self.picker else {
+            self.focus = Focus::Editor;
+            return;
+        };
+        match k.code {
+            KeyCode::Esc => {
+                self.picker = None;
+                self.focus = Focus::Editor;
+            }
+            KeyCode::Enter | KeyCode::Tab => self.picker_accept(),
+            KeyCode::Up => p.move_by(-1),
+            KeyCode::Down => p.move_by(1),
+            KeyCode::PageUp => p.move_by(-10),
+            KeyCode::PageDown => p.move_by(10),
+            KeyCode::Char('p') if ctrl => p.move_by(-1),
+            KeyCode::Char('n') if ctrl => p.move_by(1),
+            KeyCode::Backspace => {
+                p.filter.backspace();
+                p.filter_changed();
+            }
+            KeyCode::Char(c) if !ctrl => {
+                p.filter.insert_str(&c.to_string());
+                p.filter_changed();
+            }
+            _ => {}
+        }
+    }
+
+    fn picker_accept(&mut self) {
+        let Some(p) = self.picker.take() else { return };
+        self.focus = Focus::Editor;
+        let Some(item) = p.current().cloned() else { return };
+        match p.kind {
+            PickerKind::Language => self.exec_setlang(&item.value),
+            PickerKind::Snippet => {
+                self.buffer.break_group();
+                self.insert_text(&item.value);
+                self.buffer.break_group();
+                self.flash(format!("inserted snippet: {}", item.label));
+            }
+        }
+    }
+
+    fn picker_mouse(&mut self, m: MouseEvent) {
+        let Some(p) = &mut self.picker else { return };
+        let area = self.area;
+        let vis = p.visible();
+        let rect = picker::picker_rect(area, vis.len().max(1));
+        match m.kind {
+            MouseEventKind::ScrollDown => p.move_by(1),
+            MouseEventKind::ScrollUp => p.move_by(-1),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !contains(rect, m.column, m.row) {
+                    self.picker = None;
+                    self.focus = Focus::Editor;
+                    return;
+                }
+                let rows = picker::visible_rows(rect);
+                let start = picker::window_start(p.selected, rows);
+                for r in 0..rows.min(vis.len().saturating_sub(start)) {
+                    if contains(picker::row_rect(rect, r), m.column, m.row) {
+                        p.selected = start + r;
+                        return self.picker_accept();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     // ---- result table interaction ------------------------------------------
 
     fn toggle_table_focus(&mut self) {
@@ -1915,6 +2070,9 @@ impl App {
     pub fn handle_mouse(&mut self, m: MouseEvent) {
         if !self.cfg.editor.mouse || matches!(self.focus, Focus::Prompt | Focus::Confirm) {
             return;
+        }
+        if self.focus == Focus::Picker {
+            return self.picker_mouse(m);
         }
         let l = self.layout(self.area);
         let (x, y) = (m.column, m.row);

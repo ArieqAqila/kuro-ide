@@ -1,5 +1,5 @@
 use super::classify::{classify_pg, line_col_from_offset};
-use super::profile::Resolved;
+use super::profile::{Engine, Resolved};
 use super::{Canceller, DbError, Driver, ResultSet};
 use crate::table::Column;
 use postgres::error::ErrorPosition;
@@ -159,6 +159,10 @@ impl Driver for PgDriver {
 
     fn label(&self) -> String {
         self.label.clone()
+    }
+
+    fn engine(&self) -> Engine {
+        Engine::Postgres
     }
 }
 

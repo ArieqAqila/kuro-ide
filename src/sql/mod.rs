@@ -69,6 +69,7 @@ pub trait Driver: Send {
     fn execute(&mut self, sql: &str, row_limit: usize) -> Result<ResultSet, DbError>;
     fn canceller(&self) -> Canceller;
     fn label(&self) -> String;
+    fn engine(&self) -> Engine;
 }
 
 pub fn connect(r: &Resolved) -> Result<Box<dyn Driver>, DbError> {
@@ -94,6 +95,7 @@ pub struct Session {
     rx: Receiver<QueryReport>,
     canceller: Canceller,
     pub label: String,
+    pub engine: Engine,
     pub running_since: Option<Instant>,
 }
 
@@ -103,6 +105,7 @@ impl Session {
         let (rep_tx, rx) = channel::<QueryReport>();
         let canceller = driver.canceller();
         let label = driver.label();
+        let engine = driver.engine();
         std::thread::spawn(move || {
             while let Ok(Cmd::Run(sql, limit)) = cmd_rx.recv() {
                 let t = Instant::now();
@@ -113,7 +116,7 @@ impl Session {
                 }
             }
         });
-        Session { tx, rx, canceller, label, running_since: None }
+        Session { tx, rx, canceller, label, engine, running_since: None }
     }
 
     pub fn is_running(&self) -> bool {
@@ -278,6 +281,9 @@ mod tests {
         }
         fn label(&self) -> String {
             "fake".into()
+        }
+        fn engine(&self) -> Engine {
+            Engine::Postgres
         }
     }
 
