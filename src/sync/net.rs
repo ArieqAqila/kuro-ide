@@ -130,10 +130,10 @@ impl SyncHandle {
             fs::canonicalize(dir).map(|d| d.join(path.file_name().unwrap_or_default()))
         });
         let canonical = canonical.map_err(|e| StartError::Io(e.to_string()))?;
-        if let Ok(m) = fs::metadata(&canonical) {
-            if m.len() > opts.max_file_bytes {
-                return Err(StartError::TooLarge(m.len()));
-            }
+        if let Ok(m) = fs::metadata(&canonical)
+            && m.len() > opts.max_file_bytes
+        {
+            return Err(StartError::TooLarge(m.len()));
         }
         let client_id = opts.client_id.unwrap_or_else(random_id);
         let (tx, rx) = mpsc::channel::<Event>();
@@ -390,13 +390,13 @@ impl Core {
             match self.rx.recv_timeout(left) {
                 Ok(Event::Wire(c, Some(line))) if Some(c) == self.leader_conn => {
                     let Ok(msg) = decode::<ServerMsg>(&line) else { continue };
-                    if let ServerMsg::Welcome { text, .. } = &msg {
-                        if text.len() as u64 > self.opts.max_file_bytes {
-                            let n = text.len() as u64;
-                            self.say_goodbye();
-                            self.close_all();
-                            return Err(StartError::TooLarge(n));
-                        }
+                    if let ServerMsg::Welcome { text, .. } = &msg
+                        && text.len() as u64 > self.opts.max_file_bytes
+                    {
+                        let n = text.len() as u64;
+                        self.say_goodbye();
+                        self.close_all();
+                        return Err(StartError::TooLarge(n));
                     }
                     let outs = self.node.as_mut().unwrap().input(Input::FromLeader(msg));
                     let mut text = None;
@@ -694,10 +694,10 @@ impl Core {
     // ---- leaving
 
     fn graceful_stop(&mut self) {
-        if let Some(n) = self.node.as_mut() {
-            if let Some(l) = n.leader.as_mut() {
-                l.flush_journal(0);
-            }
+        if let Some(n) = self.node.as_mut()
+            && let Some(l) = n.leader.as_mut()
+        {
+            l.flush_journal(0);
         }
         self.say_goodbye();
         self.stop_listening();

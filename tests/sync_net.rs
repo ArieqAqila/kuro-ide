@@ -3,7 +3,7 @@
 
 use kuro::sync::net::{StartError, SyncEvent, SyncHandle, SyncOptions, key_for};
 use kuro::sync::node::State;
-use kuro::sync::ot::{self, Op};
+use kuro::sync::ot::{self};
 use kuro::sync::replica::Effect;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
