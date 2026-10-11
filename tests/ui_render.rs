@@ -364,14 +364,25 @@ fn double_click_selects_a_word_and_triple_click_a_line() {
 }
 
 #[test]
-fn slow_second_click_is_not_a_double_click() {
+fn clicks_within_the_window_are_double_and_slower_ones_are_not() {
     let mut cfg = Config::default();
-    cfg.editor.double_click_ms = 1;
+    cfg.editor.double_click_ms = 400;
     let (mut app, _) = app_cfg(SAMPLE, cfg);
+    let clock = ManualClock::install(&mut app);
+    let gw = gutter_w(&app);
     render(&mut app);
-    click(&mut app, 6, 0);
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    click(&mut app, 6, 0);
+    // 399 ms apart: a double click selects the word
+    click(&mut app, gw + 2, 0);
+    clock.advance_ms(399);
+    click(&mut app, gw + 2, 0);
+    assert_eq!(app.buffer.selected_text().as_deref(), Some("alpha"));
+    // 401 ms later: just a new single click
+    clock.advance_ms(401);
+    click(&mut app, gw + 2, 0);
+    assert!(app.buffer.selection().is_none(), "too slow to count");
+    // and a click at another position never combines with the previous one
+    clock.advance_ms(10);
+    click(&mut app, gw + 8, 0);
     assert!(app.buffer.selection().is_none());
 }
 

@@ -77,8 +77,16 @@ fn postgres() {
     assert!(r.elapsed < Duration::from_secs(30));
 
     // long-running query + cancel
+    let mut watcher = session(&su).unwrap();
     s.run("SELECT pg_sleep(30)", 100).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    // wait until the server really is executing it (condition, not a fixed delay)
+    wait_until("the pg_sleep query is active", || {
+        let r = run(
+            &mut watcher,
+            "SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%pg_sleep(30)%' AND pid <> pg_backend_pid()",
+        );
+        r.result.is_ok_and(|rs| rs.rows[0][0] != "0")
+    });
     s.cancel().unwrap();
     let r = s.wait(Duration::from_secs(10)).expect("cancel did not stop the query");
     assert!(r.elapsed < Duration::from_secs(10));
@@ -172,8 +180,15 @@ fn mariadb() {
     assert_eq!((rs.rows.len(), rs.total_rows, rs.truncated), (1000, 200_000, true));
 
     // long-running + cancel (MariaDB may end it with an error or an interrupted result)
+    let mut watcher = session(&su).unwrap();
     s.run("SELECT SLEEP(30)", 100).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    wait_until("the SLEEP query is running", || {
+        let r = run(
+            &mut watcher,
+            "SELECT COUNT(*) FROM information_schema.processlist WHERE info LIKE '%SLEEP(30)%' AND id <> CONNECTION_ID()",
+        );
+        r.result.is_ok_and(|rs| rs.rows[0][0] != "0")
+    });
     s.cancel().unwrap();
     let r = s.wait(Duration::from_secs(10)).expect("cancel did not stop the query");
     assert!(r.elapsed < Duration::from_secs(10), "cancelled after {:?}", r.elapsed);

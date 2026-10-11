@@ -117,6 +117,8 @@ pub struct App {
     click: Option<Click>,
     drag_origin: Option<usize>,
     pub area: Rect,
+    /// Time source for click timing; tests replace it with a manual clock.
+    clock: std::sync::Arc<dyn Fn() -> Instant + Send + Sync>,
     pub quit: bool,
     pub syn: Option<SynCache>,
     pub lang: &'static LangSpec,
@@ -227,6 +229,7 @@ impl App {
             click: None,
             drag_origin: None,
             area: Rect::new(0, 0, 80, 24),
+            clock: std::sync::Arc::new(Instant::now),
             quit: false,
             syn: None,
             lang,
@@ -290,6 +293,11 @@ impl App {
         self.lang_override = mode;
         self.update_lang();
         self.syn = None; // recolour the whole buffer now
+    }
+
+    /// Replace the time source (double/triple-click detection). Used by tests for deterministic timing.
+    pub fn set_clock(&mut self, clock: impl Fn() -> Instant + Send + Sync + 'static) {
+        self.clock = std::sync::Arc::new(clock);
     }
 
     pub fn modal(&self) -> bool {
@@ -2389,7 +2397,7 @@ impl App {
     }
 
     fn register_click(&mut self, x: u16, y: u16) -> u8 {
-        let now = Instant::now();
+        let now = (self.clock)();
         let window = Duration::from_millis(self.cfg.editor.double_click_ms);
         let count = match &self.click {
             Some(c) if now.duration_since(c.at) <= window && c.pos == (x, y) => (c.count % 3) + 1,

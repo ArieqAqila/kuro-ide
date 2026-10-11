@@ -16,10 +16,36 @@ pub fn app_with(text: &str) -> (App, MemoryClipboard) {
     app_cfg(text, Config::default())
 }
 
-pub fn app_cfg(text: &str, cfg: Config) -> (App, MemoryClipboard) {
+pub fn app_cfg(text: &str, mut cfg: Config) -> (App, MemoryClipboard) {
+    // Tests never read the user's real connection profiles: point at a path that cannot exist.
+    if cfg.sql.connections_file.is_empty() {
+        cfg.sql.connections_file = "/nonexistent-kuro-test-dir/connections.toml".into();
+    }
     let clip = MemoryClipboard::default();
     let app = App::new(cfg, Buffer::from_str(text), Box::new(clip.clone()));
     (app, clip)
+}
+
+/// A clock that only moves when told to (deterministic click timing).
+#[derive(Clone)]
+pub struct ManualClock {
+    base: std::time::Instant,
+    offset_ms: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl ManualClock {
+    pub fn install(app: &mut App) -> ManualClock {
+        let c = ManualClock { base: std::time::Instant::now(), offset_ms: Default::default() };
+        let c2 = c.clone();
+        app.set_clock(move || c2.now());
+        c
+    }
+    pub fn now(&self) -> std::time::Instant {
+        self.base + std::time::Duration::from_millis(self.offset_ms.load(std::sync::atomic::Ordering::SeqCst))
+    }
+    pub fn advance_ms(&self, ms: u64) {
+        self.offset_ms.fetch_add(ms, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 pub fn modeless(text: &str) -> (App, MemoryClipboard) {

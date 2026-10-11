@@ -271,7 +271,7 @@ impl Driver for Fake {
                 if t.elapsed() > Duration::from_secs(10) {
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::yield_now();
             }
             return Err(DbError {
                 category: ErrorCategory::Execution,
@@ -322,7 +322,7 @@ fn wait_for_result(app: &mut App) {
     let t = Instant::now();
     while app.sql.session.as_ref().is_some_and(|s| s.is_running()) {
         assert!(t.elapsed() < Duration::from_secs(10), "query never finished");
-        std::thread::sleep(Duration::from_millis(5));
+        std::thread::yield_now();
         app.tick();
     }
 }
@@ -367,9 +367,7 @@ fn error_line_and_column_are_mapped_back_to_the_buffer() {
 fn running_query_shows_progress_and_can_be_cancelled() {
     let mut app = connected("SLOW");
     press(&mut app, "f6");
-    std::thread::sleep(Duration::from_millis(60));
-    app.tick();
-    assert!(app.sql.session.as_ref().unwrap().is_running());
+    assert!(app.sql.session.as_ref().unwrap().is_running(), "running state is set synchronously, no waiting needed");
     let s = screen(&mut app).join("\n");
     assert!(s.contains("running"), "{s}");
     press(&mut app, "f6");
@@ -437,7 +435,7 @@ fn connect_reads_profiles_and_prompts_for_the_password_hidden() {
     let t = Instant::now();
     while app.sql.result.is_none() {
         assert!(t.elapsed() < Duration::from_secs(15));
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::yield_now();
         app.tick();
     }
     let e = app.sql.result.as_ref().unwrap().outcome.as_ref().unwrap_err();

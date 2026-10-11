@@ -4,6 +4,7 @@
 
 pub mod colorscan;
 pub mod pty;
+pub mod snap;
 pub mod sqlview;
 pub mod ui;
 
@@ -117,4 +118,13 @@ pub fn err(engine: &str, r: QueryReport) -> DbError {
     let e = r.result.expect_err("expected an error");
     record(engine, &e);
     e
+}
+
+/// Poll `cond` until it is true, failing after a timeout. Tests use this instead of fixed sleeps.
+pub fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let t = Instant::now();
+    while !cond() {
+        assert!(t.elapsed() < Duration::from_secs(30), "timed out waiting for: {what}");
+        std::thread::yield_now();
+    }
 }
