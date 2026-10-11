@@ -31,8 +31,12 @@ background colour and never emits truecolor or 256-colour sequences, so dark and
 git clone https://github.com/ArieqAqila/kuro-ide ~/src/kuro; and cd ~/src/kuro
 make install                       # cargo install --path . + fish completions
 fish_add_path ~/.cargo/bin         # once, if ~/.cargo/bin is not on your PATH yet
-kuro --version
+kuro --version                     # prints the git commit it was built from, e.g. kuro 0.1.0 (775d078)
 ```
+
+After pulling or committing changes, run `make install` again and **restart any running kuro**: an installed
+binary (and a process already running it) keeps the old behaviour until then. If `kuro --version` shows no commit or an
+older one than `git log -1`, you are running a stale build.
 
 Use it as `vi` **without touching the system `vi`** (see [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for what `vi`
 resolves to on this machine):

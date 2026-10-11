@@ -55,6 +55,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   clock, a keybinding registry (`src/keymap.rs`) whose generated tables in `docs/KEYBINDINGS.md` and per-binding behaviour
   probes are checked against the code, `make report` (passed/failed/skipped per layer), `docs/TESTING.md`.
 
+- `kuro --version` includes the git commit it was built from (`kuro 0.1.0 (775d078)`; `-dirty` with uncommitted changes), so a stale installed binary is easy to spot.
+
 ### Removed
 - **F5** no longer runs a query (use Ctrl+Enter, its fallback key, or `:run`). F6 (run buffer) and F7 (cancel) remain.
 

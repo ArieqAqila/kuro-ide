@@ -41,7 +41,7 @@ fn parse_args() -> Result<Option<Args>> {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--version" | "-V" => {
-                println!("kuro {}", env!("CARGO_PKG_VERSION"));
+                println!("kuro {} ({})", env!("CARGO_PKG_VERSION"), env!("KURO_GIT"));
                 return Ok(None);
             }
             "-h" | "--help" => {

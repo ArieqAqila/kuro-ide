@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 layer_of() {
   case "$1" in
-    lib|classify_fixtures|docs_check|keybindings) echo "unit" ;;
+    lib|classify_fixtures|docs_check|keybindings|cli) echo "unit" ;;
     prop) echo "property/fuzz" ;;
     snapshots) echo "snapshot" ;;
     ui_render|ui_sql|ui_sql_run|ui_indent|ui_modes|ui_suggest|color_rule) echo "ui (cell buffer)" ;;
