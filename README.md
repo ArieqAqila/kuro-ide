@@ -102,7 +102,10 @@ Supported databases: **PostgreSQL** and **MariaDB** only.
 
 2. Credentials are **never stored in plaintext**: a profile may reference environment variables
    (`user = "env:PGUSER"`, `password = "env:PGPASSWORD"`) or ask at connect time (`password = "prompt"`, masked).
-   A literal password in the file is rejected. For example, for this shell only:
+   A literal password in the file is rejected. A password you type at the prompt is kept **in memory only** for the
+   rest of the session, so reconnecting to the same profile does not ask again; it is wiped when kuro exits, dropped as
+   soon as the server rejects it, and `:sql forget [profile]` clears it on demand. It is never written to disk or hashed.
+   For example, for this shell only:
 
    ```fish
    set -x PGUSER app; set -x PGPASSWORD (read -s -P 'password: ')

@@ -36,7 +36,7 @@ update-snapshots:
 
 # rendering and input on the cell buffer, plus the real binary in a pseudo-terminal (no database needed)
 test-ui:
-	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest \
+	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest --test ui_password \
 	  --test color_rule --test pty_ui
 
 # real MariaDB + PostgreSQL in throwaway Docker containers (skipped with a message if Docker is unavailable;

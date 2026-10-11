@@ -155,7 +155,12 @@ pub const BINDINGS: &[Binding] = &[
     b("c_runline", ":runline", "Command line", "Run the current line"),
     b("c_runbuffer", ":runbuffer", "Command line", "Run the whole buffer"),
     b("c_cancel", ":cancel", "Command line", "Cancel the running query"),
-    b("c_sql", ":sql close / show / profiles / warnings", "Command line", "Result pane, profile list and warnings"),
+    b(
+        "c_sql",
+        ":sql close / show / profiles / warnings / forget",
+        "Command line",
+        "Result pane, profile list, warnings, and forgetting remembered passwords",
+    ),
     b("c_warnings", ":warnings", "Command line", "Show configuration warnings"),
     // ---- mouse
     b("m_click", "Click", "Mouse", "Place the cursor"),

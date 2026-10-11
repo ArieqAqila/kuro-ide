@@ -208,7 +208,7 @@ since kuro's startup check is the authority. Without the protocol:
 | `:runline` | Run the current line |
 | `:runbuffer` | Run the whole buffer |
 | `:cancel` | Cancel the running query |
-| `:sql close / show / profiles / warnings` | Result pane, profile list and warnings |
+| `:sql close / show / profiles / warnings / forget` | Result pane, profile list, warnings, and forgetting remembered passwords |
 | `:warnings` | Show configuration warnings |
 
 ### Mouse

@@ -99,3 +99,92 @@ fn run_scroll_and_error_in_a_real_terminal() {
     let s = pty.wait_for("cancelled", |s| s.iter().any(|r| r.contains("canceling statement")));
     assert!(s.iter().any(|r| r.contains("execution error")));
 }
+
+#[test]
+fn prompted_password_is_reused_dropped_when_wrong_and_never_written_to_disk() {
+    if docker_unavailable().is_some() {
+        return;
+    }
+    let c = Container::start("ptypw", "postgres:16-alpine", 5432, &[("POSTGRES_PASSWORD", "{pw}")]);
+    c.wait_log("database system is ready to accept connections", 2);
+    let dir = tempfile::tempdir().unwrap();
+    // every place the program could write to lives under `dir`, so one scan covers them all
+    let sub = |n: &str| {
+        let p = dir.path().join(n);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    };
+    let (home, state, data, runtime) = (sub("home"), sub("state"), sub("data"), sub("run"));
+    std::fs::write(
+        dir.path().join("connections.toml"),
+        format!(
+            "[profiles.good]\ndriver = \"postgres\"\nhost = \"127.0.0.1\"\nport = {p}\nuser = \"postgres\"\npassword = \"prompt\"\ndatabase = \"postgres\"\n\n[profiles.other]\ndriver = \"postgres\"\nhost = \"127.0.0.1\"\nport = {p}\nuser = \"postgres\"\npassword = \"prompt\"\ndatabase = \"template1\"\n",
+            p = c.port
+        ),
+    )
+    .unwrap();
+    let env = [
+        ("HOME", home.to_str().unwrap()),
+        ("XDG_STATE_HOME", state.to_str().unwrap()),
+        ("XDG_DATA_HOME", data.to_str().unwrap()),
+        ("XDG_RUNTIME_DIR", runtime.to_str().unwrap()),
+    ];
+    let mut pty = Pty::spawn(dir.path(), "[clipboard]\nbackend = \"osc52\"\n", None, &env);
+    pty.wait_for("start", |s| s[28].contains("NORMAL"));
+    let bottom = |s: &[String]| s[29].trim_end().to_string();
+
+    // first connect: prompt, typed password is never echoed
+    let t = std::time::Instant::now();
+    loop {
+        pty.send(":connect good\r");
+        pty.wait_for("password prompt", |s| bottom(s).contains("password for good"));
+        pty.send(&c.password);
+        let s = pty.wait_for("masked", |s| bottom(s).contains('•'));
+        assert!(!s.iter().any(|r| r.contains(&c.password)), "password echoed on screen");
+        pty.send("\r");
+        let s = pty.wait_for_secs("connected or failed", 20, |s| {
+            s[28].contains("● postgres://") || s.iter().any(|r| r.contains("could not connect"))
+        });
+        if s[28].contains("● postgres://") {
+            break;
+        }
+        assert!(t.elapsed().as_secs() < 60, "never connected:\n{}", s.join("\n"));
+    }
+
+    // reconnecting to the same profile does not ask again
+    pty.send(":disconnect\r");
+    pty.wait_for("disconnected", |s| !s[28].contains("● postgres://"));
+    pty.send(":connect good\r");
+    let s = pty.wait_for("reconnected without a prompt", |s| s[28].contains("● postgres://"));
+    assert!(!s.iter().any(|r| r.contains("password for")), "it must not ask again:\n{}", s.join("\n"));
+
+    // a different profile asks; a wrong password is rejected and not remembered
+    pty.send(":connect other\r");
+    pty.wait_for("prompt for the other profile", |s| bottom(s).contains("password for other"));
+    pty.send("not-the-password\r");
+    let s = pty.wait_for("rejected", |s| s.iter().any(|r| r.contains("could not connect") || r.contains("password authentication failed")));
+    assert!(s.iter().any(|r| r.contains("wrong password") || r.contains("authentication failed")), "{}", s.join("\n"));
+    pty.send(ESC);
+    pty.send(":connect other\r");
+    pty.wait_for("asks again after a wrong password", |s| bottom(s).contains("password for other"));
+    pty.send(ESC);
+
+    // quit, then look at every file under every directory the program could have used
+    pty.send(CTRL_Q);
+    assert!(pty.wait_exit());
+    let raw = String::from_utf8_lossy(&pty.raw_output()).into_owned();
+    assert!(!raw.contains(&c.password), "the password appeared in the terminal output stream");
+    let mut hits = vec![];
+    fn scan(dir: &std::path::Path, needle: &[u8], hits: &mut Vec<String>) {
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                scan(&p, needle, hits);
+            } else if std::fs::read(&p).is_ok_and(|b| b.windows(needle.len()).any(|w| w == needle)) {
+                hits.push(p.display().to_string());
+            }
+        }
+    }
+    scan(dir.path(), c.password.as_bytes(), &mut hits);
+    assert!(hits.is_empty(), "the password was written to disk: {hits:?}");
+}

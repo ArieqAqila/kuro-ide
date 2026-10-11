@@ -73,6 +73,11 @@ pub fn classify_mysql(code: u16, sqlstate: &str) -> ErrorCategory {
     }
 }
 
+/// Did the server refuse the credentials? (PostgreSQL 28P01 / 28000, MariaDB 1045.) Used to forget a cached password.
+pub fn is_auth_failure(code: &str) -> bool {
+    matches!(code, "28P01" | "28000" | "1045")
+}
+
 /// 1-based char `offset` into `sql` -> 1-based (line, column).
 pub fn line_col_from_offset(sql: &str, offset: usize) -> (usize, usize) {
     let (mut line, mut col) = (1, 1);
@@ -168,6 +173,16 @@ mod tests {
         assert_eq!(classify_mysql(2013, "HY000"), Execution, "lost connection");
         assert_eq!(classify_mysql(9999, "22003"), Runtime, "sqlstate class fallback");
         assert_eq!(classify_mysql(9999, ""), Execution);
+    }
+
+    #[test]
+    fn authentication_failures_are_recognised() {
+        for c in ["28P01", "28000", "1045"] {
+            assert!(is_auth_failure(c), "{c}");
+        }
+        for c in ["42601", "1064", "1044", "57014", ""] {
+            assert!(!is_auth_failure(c), "{c}");
+        }
     }
 
     #[test]

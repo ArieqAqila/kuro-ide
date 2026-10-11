@@ -57,6 +57,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - `kuro --version` includes the git commit it was built from (`kuro 0.1.0 (775d078)`; `-dirty` with uncommitted changes), so a stale installed binary is easy to spot.
 
+- **Password reuse (memory only):** a password typed for a `password = "prompt"` profile is remembered for the session
+  and reused when reconnecting to the same profile (same server, user and database); other profiles ask again; a rejected
+  password is never kept; it is wiped on exit and by `:sql forget [profile]`. Never on disk, never logged, never hashed;
+  the process asks the kernel not to dump its memory once a password is stored.
+
 ### Removed
 - **F5** no longer runs a query (use Ctrl+Enter, its fallback key, or `:run`). F6 (run buffer) and F7 (cancel) remain.
 

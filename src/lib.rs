@@ -13,6 +13,7 @@ pub mod keymap;
 pub mod keyspec;
 pub mod picker;
 pub mod render;
+pub mod secret;
 pub mod snippets;
 pub mod sql;
 pub mod suggest;

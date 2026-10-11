@@ -9,6 +9,7 @@ use crate::findbar::{self, FindBar, TextField, contains};
 use crate::indent::{self, Indent};
 use crate::keyspec::{self, Chord};
 use crate::picker::{self, Picker, PickerItem, PickerKind};
+use crate::secret::{CacheKey, PasswordCache, Secret};
 use crate::sql::{self, DbError, ResultSet, Session, profile, stmt};
 use crate::suggest::{self, Suggestions};
 use crate::syntax::{self, Kind, LangSpec};
@@ -69,10 +70,21 @@ impl ResultView {
     }
 }
 
+/// A connection attempt in progress.
+pub struct Connecting {
+    pub name: String,
+    pub rx: Receiver<Result<Session, DbError>>,
+    /// A password the user just typed: stored in the cache only if the connection succeeds.
+    pub secret: Option<(CacheKey, Secret)>,
+}
+
+/// How a connection is made; tests replace it with a fake that needs no database.
+pub type Connector = std::sync::Arc<dyn Fn(&profile::Resolved) -> Result<Box<dyn sql::Driver>, DbError> + Send + Sync>;
+
 #[derive(Default)]
 pub struct SqlUi {
     pub session: Option<Session>,
-    pub connecting: Option<(String, Receiver<Result<Session, DbError>>)>,
+    pub connecting: Option<Connecting>,
     pub result: Option<ResultView>,
     pub pane_open: bool,
     /// With `result_view = "tab"`: the results tab is currently in front of the editor.
@@ -148,6 +160,9 @@ pub struct App {
     /// Buffer version the popup was last evaluated at: it only *opens* because of an edit (typing).
     suggest_seen: u64,
     pub sql: SqlUi,
+    /// Prompted passwords kept for this session only (memory, never disk).
+    pub passwords: PasswordCache,
+    connector: Connector,
     pub warnings: Vec<String>,
 }
 
@@ -255,6 +270,8 @@ impl App {
             suggest_dismissed: None,
             suggest_seen: 0,
             sql: SqlUi::default(),
+            passwords: PasswordCache::default(),
+            connector: std::sync::Arc::new(sql::connect),
             warnings: vec![],
         }
     }
@@ -310,6 +327,11 @@ impl App {
     /// Replace the time source (double/triple-click detection). Used by tests for deterministic timing.
     pub fn set_clock(&mut self, clock: impl Fn() -> Instant + Send + Sync + 'static) {
         self.clock = std::sync::Arc::new(clock);
+    }
+
+    /// Replace how database connections are made (tests).
+    pub fn set_connector(&mut self, c: Connector) {
+        self.connector = c;
     }
 
     pub fn modal(&self) -> bool {
@@ -852,7 +874,7 @@ impl App {
                 self.focus = Focus::Editor;
                 match p.kind {
                     PromptKind::Command => self.exec_command(&p.field.text),
-                    PromptKind::Password(name) => self.sql_connect_with(&name, Some(p.field.text)),
+                    PromptKind::Password(name) => self.sql_connect_with(&name, Some(zeroize::Zeroizing::new(p.field.text))),
                 }
             }
             KeyCode::Backspace if p.field.is_empty() && p.kind == PromptKind::Command => {
@@ -1844,6 +1866,10 @@ impl App {
                     self.focus = Focus::Table;
                 }
             }
+            "forget" => {
+                let n = self.passwords.forget(if rest.is_empty() { None } else { Some(rest) });
+                self.flash(format!("forgot {n} stored password{}", if n == 1 { "" } else { "s" }));
+            }
             "warnings" => {
                 let w = self.sql.result.as_ref().and_then(|r| r.outcome.as_ref().ok()).map(|rs| rs.warnings.clone()).unwrap_or_default();
                 if w.is_empty() {
@@ -1856,8 +1882,9 @@ impl App {
                 Ok(p) => self.flash(format!("profiles: {}", p.keys().cloned().collect::<Vec<_>>().join(", "))),
                 Err(e) => self.flash(e),
             },
-            _ => self
-                .flash("usage: :connect NAME | :disconnect | :run | :runline | :runbuffer | :cancel | :sql close|show|profiles|warnings"),
+            _ => self.flash(
+                "usage: :connect NAME | :disconnect | :run | :runline | :runbuffer | :cancel | :sql close|show|profiles|warnings|forget",
+            ),
         }
     }
 
@@ -1866,32 +1893,56 @@ impl App {
             Ok(p) => p,
             Err(e) => return self.flash(e),
         };
-        match profiles.get(name) {
-            None => self.flash(format!("no profile {name:?}; have: {}", profiles.keys().cloned().collect::<Vec<_>>().join(", "))),
-            Some(p) if p.needs_password_prompt() => {
+        let Some(p) = profiles.get(name) else {
+            return self.flash(format!("no profile {name:?}; have: {}", profiles.keys().cloned().collect::<Vec<_>>().join(", ")));
+        };
+        if !p.needs_password_prompt() {
+            return self.sql_connect_with(name, None);
+        }
+        // reuse the password typed earlier in this session for the very same connection
+        let cached = Self::cache_key(name, p).and_then(|k| self.passwords.get(&k).map(|s| s.expose().to_string()));
+        match cached {
+            Some(pw) => self.sql_connect_with(name, Some(zeroize::Zeroizing::new(pw))),
+            None => {
                 self.prompt = Some(Prompt { kind: PromptKind::Password(name.to_string()), field: TextField::default() });
                 self.focus = Focus::Prompt;
             }
-            Some(_) => self.sql_connect_with(name, None),
         }
     }
 
-    fn sql_connect_with(&mut self, name: &str, password: Option<String>) {
+    /// Cache identity of a profile (name plus server and account), without needing the password.
+    fn cache_key(name: &str, p: &profile::Profile) -> Option<CacheKey> {
+        let r = p.resolve(&|k| std::env::var(k).ok(), Some(String::new())).ok()?;
+        Some(CacheKey { profile: name.to_string(), host: r.host, port: r.port, user: r.user, database: r.database })
+    }
+
+    fn sql_connect_with(&mut self, name: &str, password: Option<zeroize::Zeroizing<String>>) {
         let profiles = match profile::load_profiles(&self.cfg.sql.connections_path()) {
             Ok(p) => p,
             Err(e) => return self.flash(e),
         };
         let Some(p) = profiles.get(name) else { return self.flash(format!("no profile {name:?}")) };
-        let resolved = match p.resolve(&|k| std::env::var(k).ok(), password) {
+        let prompted = p.needs_password_prompt();
+        let resolved = match p.resolve(&|k| std::env::var(k).ok(), password.as_ref().map(|s| s.to_string())) {
             Ok(r) => r,
             Err(e) => return self.flash(format!("profile {name}: {e}")),
         };
+        let secret = match (&password, prompted) {
+            (Some(pw), true) => Self::cache_key(name, p).map(|k| (k, Secret::new(pw.to_string()))),
+            _ => None,
+        };
         self.sql_disconnect();
         let (tx, rx) = std::sync::mpsc::channel();
+        let connector = self.connector.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(sql::connect(&resolved).map(Session::new));
+            let mut resolved = resolved;
+            let r = connector(&resolved).map(Session::new);
+            if let Some(p) = resolved.password.as_mut() {
+                zeroize::Zeroize::zeroize(p); // wipe our copy; the driver keeps its own for the connection
+            }
+            let _ = tx.send(r);
         });
-        self.sql.connecting = Some((name.to_string(), rx));
+        self.sql.connecting = Some(Connecting { name: name.to_string(), rx, secret });
         self.flash(format!("connecting to {name}…"));
     }
 
@@ -1979,19 +2030,30 @@ impl App {
     /// Poll background work (connect results, finished queries). Call regularly.
     pub fn tick(&mut self) -> bool {
         let mut changed = false;
-        if let Some((name, rx)) = &self.sql.connecting {
-            match rx.try_recv() {
+        if let Some(c) = &self.sql.connecting {
+            match c.rx.try_recv() {
                 Ok(Ok(sess)) => {
                     let label = sess.label.clone();
-                    let name = name.clone();
+                    let c = self.sql.connecting.take().unwrap();
+                    if let Some((key, secret)) = c.secret {
+                        self.passwords.insert(key, secret);
+                    }
                     self.sql.session = Some(sess);
-                    self.sql.connecting = None;
-                    self.flash(format!("connected: {name} ({label})"));
+                    self.flash(format!("connected: {} ({label})", c.name));
                     changed = true;
                 }
                 Ok(Err(e)) => {
-                    self.sql.connecting = None;
-                    let status = format!("✖ could not connect · {}", e.category.label());
+                    let c = self.sql.connecting.take().unwrap();
+                    let mut note = String::new();
+                    if e.code.as_deref().is_some_and(sql::classify::is_auth_failure) {
+                        // the server refused the credentials: never keep that password
+                        if let Some((key, _)) = &c.secret {
+                            self.passwords.remove(key);
+                        }
+                        self.passwords.forget(Some(&c.name));
+                        note = format!(" · wrong password for {}: not stored", c.name);
+                    }
+                    let status = format!("✖ could not connect · {}{note}", e.category.label());
                     self.sql.result = Some(ResultView::new(Err(e), Duration::ZERO, status));
                     self.sql.pane_open = true;
                     if self.cfg.sql.result_view == "tab" {
