@@ -85,6 +85,12 @@ pub struct SqlConfig {
     pub row_limit: usize,
     /// Empty = `<config dir>/connections.toml`.
     pub connections_file: String,
+    /// Key that runs the selection / current statement where Ctrl+Enter cannot be sent (see docs).
+    pub run_fallback_key: String,
+    /// Key that runs only the current line.
+    pub run_line_key: String,
+    /// In a SQL buffer, refuse edits (and Insert mode) until a database connection exists.
+    pub block_editing_when_disconnected: bool,
 }
 
 impl Default for SqlConfig {
@@ -96,6 +102,9 @@ impl Default for SqlConfig {
             column_max_width: 40,
             row_limit: 10_000,
             connections_file: String::new(),
+            run_fallback_key: "alt+enter".into(),
+            run_line_key: "alt+l".into(),
+            block_editing_when_disconnected: true,
         }
     }
 }
@@ -104,13 +113,13 @@ impl Default for SqlConfig {
 #[serde(default)]
 pub struct UiConfig {
     pub syntax_highlight: bool,
-    /// Push the kitty keyboard protocol flags so Ctrl+Shift+Z etc. are distinguishable.
-    pub kitty_keyboard: bool,
+    /// auto | on | off: use the kitty keyboard protocol so Ctrl+Enter, Shift+Tab etc. are distinguishable.
+    pub kitty_keyboard: String,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { syntax_highlight: true, kitty_keyboard: true }
+        Self { syntax_highlight: true, kitty_keyboard: "auto".into() }
     }
 }
 
@@ -166,6 +175,7 @@ pub struct Config {
 pub const ENV_VARS: &[&str] = &["KURO_CONFIG_DIR"];
 
 pub const CLIPBOARD_BACKENDS: &[&str] = &["auto", "wl-clipboard", "xclip", "xsel", "osc52"];
+pub const KITTY_MODES: &[&str] = &["auto", "on", "off"];
 pub const INDENT_STYLES: &[&str] = &["tabs", "spaces"];
 pub const RESULT_VIEWS: &[&str] = &["split", "tab"];
 
@@ -253,6 +263,19 @@ impl Config {
             warnings
                 .push(format!("editor.indent_style = {:?} is not one of {:?}; using \"tabs\"", self.editor.indent_style, INDENT_STYLES));
             self.editor.indent_style = "tabs".into();
+        }
+        if !KITTY_MODES.contains(&self.ui.kitty_keyboard.as_str()) {
+            warnings.push(format!("ui.kitty_keyboard = {:?} is not one of {:?}; using \"auto\"", self.ui.kitty_keyboard, KITTY_MODES));
+            self.ui.kitty_keyboard = "auto".into();
+        }
+        for (name, val, default) in [
+            ("sql.run_fallback_key", &mut self.sql.run_fallback_key, "alt+enter"),
+            ("sql.run_line_key", &mut self.sql.run_line_key, "alt+l"),
+        ] {
+            if crate::keyspec::parse(val).is_none() {
+                warnings.push(format!("{name} = {val:?} is not a key like \"alt+enter\" or \"f9\"; using {default:?}"));
+                *val = default.to_string();
+            }
         }
         if !RESULT_VIEWS.contains(&self.sql.result_view.as_str()) {
             warnings.push(format!("sql.result_view = {:?} is not one of {:?}; using \"split\"", self.sql.result_view, RESULT_VIEWS));

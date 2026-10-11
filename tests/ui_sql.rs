@@ -328,10 +328,10 @@ fn wait_for_result(app: &mut App) {
 }
 
 #[test]
-fn f5_runs_the_selection_and_f6_runs_the_whole_buffer() {
+fn ctrl_enter_runs_the_selection_and_f6_runs_the_whole_buffer() {
     let mut app = connected("first line\nselect 42\nlast");
     press(&mut app, "j V");
-    press(&mut app, "f5");
+    press(&mut app, "ctrl+enter");
     wait_for_result(&mut app);
     let rs = app.sql.result.as_ref().unwrap().outcome.as_ref().unwrap();
     assert_eq!(rs.rows[0][0], "select 42\n", "only the selected line ran");
@@ -345,18 +345,10 @@ fn f5_runs_the_selection_and_f6_runs_the_whole_buffer() {
 }
 
 #[test]
-fn f5_without_a_selection_explains_itself() {
-    let mut app = connected("select 1");
-    press(&mut app, "f5");
-    assert!(screen(&mut app)[23].contains("no selection"));
-    assert!(app.sql.result.is_none());
-}
-
-#[test]
 fn running_without_a_connection_explains_itself() {
     let (mut app, _) = app_with("select 1");
     press(&mut app, "f6");
-    assert!(screen(&mut app)[23].contains("not connected"));
+    assert!(screen(&mut app)[23].contains("Not connected to a database"));
 }
 
 #[test]
@@ -364,7 +356,7 @@ fn error_line_and_column_are_mapped_back_to_the_buffer() {
     // the selection starts on buffer line 3 (index 2): "  BAD" is on the selection's first line
     let mut app = connected("one\ntwo\nok BAD stuff\nfour");
     press(&mut app, "j j V");
-    press(&mut app, "f5");
+    press(&mut app, "ctrl+enter");
     wait_for_result(&mut app);
     let e = app.sql.result.as_ref().unwrap().outcome.as_ref().unwrap_err();
     assert_eq!((e.line, e.column), (Some(3), Some(4)), "line 3 of the buffer, col 4");
@@ -391,7 +383,7 @@ fn running_query_shows_progress_and_can_be_cancelled() {
     assert!(screen(&mut app).join("\n").contains("canceling statement"));
     // and the next query works
     app.buffer = kuro::buffer::Buffer::from_str("select 1");
-    press(&mut app, "ctrl+a f5");
+    press(&mut app, "ctrl+a ctrl+enter");
     wait_for_result(&mut app);
     assert!(app.sql.result.as_ref().unwrap().outcome.is_ok());
 }

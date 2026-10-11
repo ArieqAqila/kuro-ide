@@ -29,10 +29,13 @@ table_max_rows = 25
 column_max_width = 40
 row_limit = 10000
 connections_file = ""     # empty = <config dir>/connections.toml
+run_fallback_key = "alt+enter"   # runs the selection/statement when the terminal cannot send Ctrl+Enter
+run_line_key = "alt+l"            # runs only the current line
+block_editing_when_disconnected = true
 
 [ui]
 syntax_highlight = true
-kitty_keyboard = true
+kitty_keyboard = "auto"     # auto | on | off
 
 [colors]
 # Roles -> ANSI palette slot: 0-7 normal, 8-15 bright, -1 = default foreground.

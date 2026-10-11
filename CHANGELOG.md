@@ -33,7 +33,24 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   before substring matches, nearest to the cursor first; Up/Down or Ctrl+N / Ctrl+P move, Tab or Enter accepts
   (replacing the typed prefix), Esc dismisses; the popup only opens by typing and closes when the cursor leaves the word.
 
+- **Input parser** (`src/input.rs`): kuro now reads raw terminal bytes itself (legacy keys, kitty keyboard protocol
+  `CSI u`, SGR mouse, bracketed paste) so sequences split across reads are reassembled and an incomplete sequence never
+  produces a key. Startup asks the terminal whether it speaks the kitty protocol (`ui.kitty_keyboard = "auto"`).
+- **Ctrl+Enter** runs the selection, or the statement under the cursor when nothing is selected (`src/sql/stmt.rs` splits
+  statements: quotes, comments, MariaDB backslashes and `#`, PostgreSQL `$$` bodies). `sql.run_fallback_key`
+  (default `alt+enter`) does the same in terminals that cannot send Ctrl+Enter, and kuro says so when it detects one.
+  `:runline` / `sql.run_line_key` (default `alt+l`) runs only the current line. `:connect`, `:disconnect`, `:run`,
+  `:runbuffer`, `:cancel` are available as top-level commands.
+- **Disconnected state**: a SQL buffer with no connection stays in Normal mode, refuses edits and Insert mode and shows
+  "Not connected to a database. Use :connect <profile>" (`sql.block_editing_when_disconnected`).
+- Property and fuzz tests (`tests/prop.rs`); the long run found and fixed a table-alignment bug for emoji with
+  variation selectors (widths are now measured per grapheme).
+
+### Removed
+- **F5** no longer runs a query (use Ctrl+Enter, its fallback key, or `:run`). F6 (run buffer) and F7 (cancel) remain.
+
 ### Changed
+- `ui.kitty_keyboard` is now a string (`auto` | `on` | `off`, default `auto`) instead of a boolean.
 - `editor.tab_width` now defaults to `8` (was `4`); `editor.expand_tab` is replaced by `editor.indent_style`.
 - `editor.relative_numbers` now defaults to `false`.
 - The gutter width follows the digit count of the line count (grows at 10, 100, 1000 lines) and stays stable while scrolling.

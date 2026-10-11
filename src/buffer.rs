@@ -31,6 +31,9 @@ pub struct Buffer {
     saved_version: u64,
     pub path: Option<PathBuf>,
     pub crlf: bool,
+    /// While set, every edit is refused (and recorded in `blocked_attempt`).
+    pub read_only: bool,
+    pub blocked_attempt: bool,
 }
 
 pub fn is_word_char(c: char) -> bool {
@@ -75,6 +78,8 @@ impl Buffer {
             saved_version: 0,
             path: None,
             crlf,
+            read_only: false,
+            blocked_attempt: false,
         }
     }
 
@@ -192,6 +197,10 @@ impl Buffer {
         if s.is_empty() {
             return;
         }
+        if self.read_only {
+            self.blocked_attempt = true;
+            return;
+        }
         let pos = pos.min(self.len_chars());
         self.rope.insert(pos, s);
         self.record(Edit { pos, removed: String::new(), inserted: s.to_string() });
@@ -200,6 +209,10 @@ impl Buffer {
     pub fn remove(&mut self, r: Range<usize>) -> String {
         let r = r.start.min(self.len_chars())..r.end.min(self.len_chars());
         if r.start >= r.end {
+            return String::new();
+        }
+        if self.read_only {
+            self.blocked_attempt = true;
             return String::new();
         }
         let removed = self.rope.slice(r.clone()).to_string();
@@ -246,6 +259,10 @@ impl Buffer {
 
     pub fn undo(&mut self) -> bool {
         self.open = false;
+        if self.read_only {
+            self.blocked_attempt = true;
+            return false;
+        }
         let Some(group) = self.undo.pop() else { return false };
         let mut cursor = 0;
         for e in group.edits.iter().rev() {
@@ -266,6 +283,10 @@ impl Buffer {
 
     pub fn redo(&mut self) -> bool {
         self.open = false;
+        if self.read_only {
+            self.blocked_attempt = true;
+            return false;
+        }
         let Some(group) = self.redo.pop() else { return false };
         let mut cursor = 0;
         for e in &group.edits {

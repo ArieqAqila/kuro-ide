@@ -309,6 +309,8 @@ impl App {
         }
         if let Some(m) = &self.msg {
             buf.set_stringn(r.x, r.y, m, r.width as usize, Style::default());
+        } else if self.edit_blocked() {
+            buf.set_stringn(r.x, r.y, crate::app::DISCONNECTED_MSG, r.width as usize, bold());
         } else if let Some((name, _)) = &self.sql.connecting {
             buf.set_stringn(r.x, r.y, format!("connecting to {name}…"), r.width as usize, dim());
         } else if !self.warnings.is_empty() {

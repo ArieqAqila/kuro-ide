@@ -2,7 +2,8 @@
 //! ellipsis, header, and bounded horizontal/vertical scrolling.
 
 use std::collections::BTreeSet;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub const SEP: &str = " │ ";
 pub const SEP_WIDTH: usize = 3;
@@ -57,8 +58,14 @@ pub fn sanitize(s: &str) -> String {
         .collect()
 }
 
+/// Width of one grapheme cluster, exactly as ratatui measures it (so `❤️` is 2 cells, not 1 + 0).
+fn gwidth(g: &str) -> usize {
+    UnicodeWidthStr::width(g)
+}
+
+/// Display width in terminal cells, measured per grapheme cluster.
 pub fn display_width(s: &str) -> usize {
-    UnicodeWidthStr::width(s)
+    s.graphemes(true).map(gwidth).sum()
 }
 
 /// Fit `s` to exactly `width` cells: truncate with `…` or pad with spaces.
@@ -72,12 +79,12 @@ pub fn fit(s: &str, width: usize) -> String {
     }
     let mut out = String::new();
     let mut used = 0;
-    for c in s.chars() {
-        let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+    for g in s.graphemes(true) {
+        let cw = gwidth(g);
         if used + cw > width - 1 {
             break;
         }
-        out.push(c);
+        out.push_str(g);
         used += cw;
     }
     out.push(ELLIPSIS);
@@ -91,8 +98,8 @@ pub fn fit(s: &str, width: usize) -> String {
 pub fn slice_cols(s: &str, start: usize, width: usize) -> String {
     let mut out = String::new();
     let mut x = 0;
-    for c in s.chars() {
-        let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+    for g in s.graphemes(true) {
+        let cw = gwidth(g);
         let (a, b) = (x, x + cw);
         x = b;
         if b <= start {
@@ -106,7 +113,7 @@ pub fn slice_cols(s: &str, start: usize, width: usize) -> String {
                 out.push(' ');
             }
         } else {
-            out.push(c);
+            out.push_str(g);
         }
     }
     let w = display_width(&out);
@@ -256,6 +263,15 @@ mod tests {
         assert_eq!(fit("日本語", 5), "日本…");
         assert_eq!(fit("日本語", 6), "日本語");
         assert_eq!(display_width(&fit("a😀b", 3)), 3);
+    }
+
+    #[test]
+    fn variation_selector_emoji_are_measured_per_grapheme() {
+        // U+2764 U+FE0F: one grapheme, two cells (this is what ratatui draws)
+        assert_eq!(display_width("❤\u{fe0f}"), 2);
+        assert_eq!(display_width(&fit("a❤\u{fe0f}b", 6)), 6);
+        assert_eq!(display_width(&slice_cols("a❤\u{fe0f}b", 0, 4)), 4);
+        assert_eq!(display_width(&fit("👨\u{200d}👩\u{200d}👧", 4)), 4, "ZWJ family stays one cluster");
     }
 
     #[test]

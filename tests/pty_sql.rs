@@ -73,8 +73,8 @@ fn run_scroll_and_error_in_a_real_terminal() {
     // syntax error: shown with category, position and the server's message; editor still alive
     std::fs::write(&query, "").unwrap();
     pty.send("ggVGd"); // clear the buffer
-    pty.send("iSELEC 1\x1b"); // insert a typo'd statement
-    pty.send(F6);
+    pty.send(&format!("iSELEC 1{ESC}")); // insert a typo'd statement
+    pty.send(CTRL_ENTER); // runs the statement under the cursor
     let s = pty.wait_for("error", |s| s.iter().any(|r| r.contains("syntax error at line 1, col 1")));
     assert!(s.iter().any(|r| r.contains("syntax error at or near \"SELEC\"")), "{}", s.join("\n"));
     assert!(s.iter().any(|r| r.contains("✖ syntax error")), "status line");
@@ -82,17 +82,17 @@ fn run_scroll_and_error_in_a_real_terminal() {
 
     // runtime and execution errors
     pty.send("ggVGd");
-    pty.send("iSELECT 1/0\x1b");
-    pty.send(F6);
+    pty.send(&format!("iSELECT 1/0{ESC}"));
+    pty.send(CTRL_ENTER);
     pty.wait_for("runtime", |s| s.iter().any(|r| r.contains("runtime error")) && s.iter().any(|r| r.contains("division by zero")));
     pty.send("ggVGd");
-    pty.send("iSELECT * FROM nope\x1b");
-    pty.send(F6);
+    pty.send(&format!("iSELECT * FROM nope{ESC}"));
+    pty.send(ALT_ENTER); // the fallback key does the same
     pty.wait_for("execution", |s| s.iter().any(|r| r.contains("execution error")) && s.iter().any(|r| r.contains("does not exist")));
 
     // cancel a long-running query
     pty.send("ggVGd");
-    pty.send("iSELECT pg_sleep(30)\x1b");
+    pty.send(&format!("iSELECT pg_sleep(30){ESC}"));
     pty.send(F6);
     pty.wait_for("running", |s| s.iter().any(|r| r.contains("running")));
     pty.send("\x1b[18~"); // F7

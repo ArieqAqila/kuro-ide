@@ -7,8 +7,19 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// How the emulated terminal answers kuro's startup queries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Term {
+    /// Answers the kitty keyboard query and device attributes (like kitty, foot, WezTerm).
+    Kitty,
+    /// Answers device attributes only: a terminal without the kitty protocol.
+    Legacy,
+    /// Answers nothing: exercises kuro's detection timeout.
+    Silent,
+}
+
 pub struct Pty {
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     parser: Arc<Mutex<vt100::Parser>>,
     raw: Arc<Mutex<Vec<u8>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
@@ -16,7 +27,14 @@ pub struct Pty {
     pub cols: u16,
 }
 
-pub const ESC: &str = "\x1b";
+/// Esc as a kitty-protocol terminal sends it (`CSI 27 u`): unambiguous, so it can be followed immediately by other keys.
+pub const ESC: &str = "\x1b[27u";
+/// A bare ESC byte, as legacy terminals send it: only meaningful after a quiet period.
+pub const ESC_LEGACY: &str = "\x1b";
+/// Ctrl+Enter under the kitty keyboard protocol.
+pub const CTRL_ENTER: &str = "\x1b[13;5u";
+/// Alt+Enter (the default fallback for terminals without Ctrl+Enter).
+pub const ALT_ENTER: &str = "\x1b\r";
 pub const CTRL_A: &str = "\x01";
 pub const CTRL_C: &str = "\x03";
 pub const CTRL_F: &str = "\x06";
@@ -33,6 +51,10 @@ pub const PGDN: &str = "\x1b[6~";
 impl Pty {
     /// `config` is written to <dir>/config.toml; extra env vars are passed through.
     pub fn spawn(dir: &Path, config: &str, file: Option<&Path>, env: &[(&str, &str)]) -> Pty {
+        Pty::spawn_term(dir, config, file, env, Term::Kitty)
+    }
+
+    pub fn spawn_term(dir: &Path, config: &str, file: Option<&Path>, env: &[(&str, &str)], term: Term) -> Pty {
         let (rows, cols) = (30, 100);
         std::fs::write(dir.join("config.toml"), config).unwrap();
         let pair = native_pty_system().openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).unwrap();
@@ -53,7 +75,8 @@ impl Pty {
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().unwrap();
-        let writer = pair.master.take_writer().unwrap();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
+        let reply = writer.clone();
         let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
         let p2 = parser.clone();
         let raw = Arc::new(Mutex::new(Vec::new()));
@@ -65,6 +88,21 @@ impl Pty {
                     break;
                 }
                 raw2.lock().unwrap().extend_from_slice(&buf[..n]);
+                // answer startup queries like a terminal would
+                let chunk = &buf[..n];
+                let has = |pat: &[u8]| chunk.windows(pat.len()).any(|w| w == pat);
+                let mut answer = Vec::new();
+                if term == Term::Kitty && has(b"\x1b[?u") {
+                    answer.extend_from_slice(b"\x1b[?0u");
+                }
+                if term != Term::Silent && has(b"\x1b[c") {
+                    answer.extend_from_slice(b"\x1b[?62;c");
+                }
+                if !answer.is_empty() {
+                    let mut w = reply.lock().unwrap();
+                    let _ = w.write_all(&answer);
+                    let _ = w.flush();
+                }
                 p2.lock().unwrap().process(&buf[..n]);
             }
         });
@@ -79,9 +117,9 @@ impl Pty {
     }
 
     pub fn send(&mut self, s: &str) {
-        self.writer.write_all(s.as_bytes()).unwrap();
-        self.writer.flush().unwrap();
-        std::thread::sleep(Duration::from_millis(40));
+        let mut w = self.writer.lock().unwrap();
+        w.write_all(s.as_bytes()).unwrap();
+        w.flush().unwrap();
     }
 
     pub fn mouse(&mut self, kind: &str, x: u16, y: u16) {

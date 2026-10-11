@@ -159,6 +159,24 @@ Initial state of the find-bar toggles (they can still be flipped with Alt+C / Al
 - Where connection profiles are read from. Empty means `<config dir>/connections.toml`. Never commit this file (it is in `.gitignore`).
 - **Example:** `connections_file = "/home/me/.config/kuro/connections.toml"`
 
+### `sql.run_fallback_key`
+- **Type:** string (a key such as `"alt+enter"`, `"f9"`, `"ctrl+r"`)
+- **Default:** `"alt+enter"`
+- Runs the selection, or the statement under the cursor, exactly like Ctrl+Enter. Needed in terminals that cannot send Ctrl+Enter (most can only send a plain Enter for it; see [KEYBINDINGS.md](KEYBINDINGS.md#which-terminals-can-send-ctrlenter)). kuro tells you when it detects such a terminal.
+- **Example:** `run_fallback_key = "f9"`
+
+### `sql.run_line_key`
+- **Type:** string (a key such as `"alt+l"`)
+- **Default:** `"alt+l"`
+- Runs only the line the cursor is on (also available as `:runline`).
+- **Example:** `run_line_key = "alt+shift+l"`
+
+### `sql.block_editing_when_disconnected`
+- **Type:** boolean
+- **Default:** `true`
+- In a SQL buffer with no database connection kuro stays in Normal mode, refuses edits and Insert mode, and shows "Not connected to a database. Use :connect <profile>". Inserting a snippet is still allowed. `false` lets you edit SQL files offline.
+- **Example:** `block_editing_when_disconnected = false`
+
 ## `[ui]`
 
 ### `ui.syntax_highlight`
@@ -168,10 +186,10 @@ Initial state of the find-bar toggles (they can still be flipped with Alt+C / Al
 - **Example:** `syntax_highlight = false`
 
 ### `ui.kitty_keyboard`
-- **Type:** boolean
-- **Default:** `true`
-- Ask the terminal for the kitty keyboard protocol so combinations like Ctrl+Shift+Z can be told apart from Ctrl+Z. Terminals without it ignore the request; switch off if your terminal misbehaves.
-- **Example:** `kitty_keyboard = false`
+- **Type:** string, `"auto"`, `"on"` or `"off"`
+- **Default:** `"auto"`
+- Use the kitty keyboard protocol so that Ctrl+Enter, Shift+Tab, Ctrl+Shift+Z, a bare Esc and Alt+letter can be told apart from other keys. `auto` asks the terminal at startup (a short, bounded query) and falls back to legacy keys if it does not answer; `on` assumes support without asking; `off` never uses it. Without the protocol Ctrl+Enter cannot be sent, so use `sql.run_fallback_key`.
+- **Example:** `kitty_keyboard = "off"`
 
 ## `[colors]`
 

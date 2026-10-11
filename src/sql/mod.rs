@@ -5,6 +5,7 @@ pub mod classify;
 mod my;
 mod pg;
 pub mod profile;
+pub mod stmt;
 
 use crate::table::Column;
 pub use classify::ErrorCategory;

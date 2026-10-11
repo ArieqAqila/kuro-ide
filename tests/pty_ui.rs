@@ -162,3 +162,93 @@ fn raw_terminal_output_has_no_truecolor_256_color_or_background_sequences() {
     let v = common::colorscan::violations(&raw);
     assert!(v.is_empty(), "{v:?}");
 }
+
+// ---------------------------------------------------------------- keyboard protocol and SQL run keys
+
+const SQL_CFG: &str = "[clipboard]\nbackend = \"osc52\"\n[sql]\nblock_editing_when_disconnected = false\n";
+
+fn sql_file(dir: &std::path::Path) -> std::path::PathBuf {
+    let p = dir.join("q.sql");
+    std::fs::write(&p, "select 1;\nselect 2;\n").unwrap();
+    p
+}
+
+fn bottom(s: &[String]) -> &str {
+    s[29].trim_end()
+}
+
+#[test]
+fn kitty_terminal_ctrl_enter_runs_and_plain_enter_does_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut pty = Pty::spawn_term(dir.path(), SQL_CFG, Some(&sql_file(dir.path())), &[], Term::Kitty);
+    let s = pty.wait_for("start", |s| s.iter().any(|r| r.contains("select 1")));
+    assert!(!bottom(&s).contains("Ctrl+Enter"), "no notice on a terminal that supports the protocol: {:?}", bottom(&s));
+    pty.send(ENTER);
+    pty.send(CTRL_ENTER);
+    let s = pty.wait_for("not connected message from the run key", |s| bottom(s).contains("Not connected to a database"));
+    assert!(bottom(&s).contains(":connect"));
+}
+
+#[test]
+fn legacy_terminal_gets_a_notice_and_the_fallback_key_works() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut pty = Pty::spawn_term(dir.path(), SQL_CFG, Some(&sql_file(dir.path())), &[], Term::Legacy);
+    let s = pty.wait_for("notice", |s| bottom(s).contains("Ctrl+Enter unavailable"));
+    assert!(bottom(&s).contains("Alt+Enter") && bottom(&s).contains(":run"), "{:?}", bottom(&s));
+    pty.send(ENTER); // what Ctrl+Enter looks like in such a terminal: a plain Enter
+    pty.send("j");
+    pty.wait_for("cursor moved down, nothing ran", |s| s[28].contains("Ln 2,"));
+    assert!(!bottom(&pty.screen()).contains("Not connected"), "plain Enter must not run SQL");
+    pty.send(ALT_ENTER);
+    pty.wait_for("fallback ran", |s| bottom(s).contains("Not connected to a database"));
+}
+
+#[test]
+fn silent_terminal_is_detected_within_the_timeout_and_treated_as_legacy() {
+    let dir = tempfile::tempdir().unwrap();
+    let started = std::time::Instant::now();
+    let pty = Pty::spawn_term(dir.path(), SQL_CFG, Some(&sql_file(dir.path())), &[], Term::Silent);
+    pty.wait_for("notice after the bounded detection wait", |s| bottom(s).contains("Ctrl+Enter unavailable"));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "detection is bounded: {:?}", started.elapsed());
+}
+
+#[test]
+fn kitty_keyboard_can_be_forced_on_or_off_without_asking_the_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let off = format!("{SQL_CFG}[ui]\nkitty_keyboard = \"off\"\n");
+    let pty = Pty::spawn_term(dir.path(), &off, Some(&sql_file(dir.path())), &[], Term::Kitty);
+    pty.wait_for("notice because kitty is off", |s| bottom(s).contains("Ctrl+Enter unavailable"));
+    assert!(!String::from_utf8_lossy(&pty.raw_output()).contains("\x1b[?u"), "off: the terminal is never queried");
+}
+
+#[test]
+fn a_bare_esc_byte_is_resolved_by_the_timeout_in_a_legacy_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut pty = Pty::spawn_term(dir.path(), CFG, Some(&sample(dir.path())), &[], Term::Legacy);
+    pty.wait_for("start", |s| s.iter().any(|r| r.contains("alpha")));
+    pty.send(CTRL_F);
+    pty.wait_for("find bar", |s| s.iter().any(|r| r.contains("Find")));
+    pty.send(ESC_LEGACY);
+    pty.wait_for("bar closed by the lone ESC", |s| !s.iter().any(|r| r.contains("Find")));
+    // and an escape sequence arriving in pieces is not mistaken for Esc
+    pty.send("\x1b");
+    pty.send("[B");
+    pty.wait_for("cursor moved down by the split Down sequence", |s| s[28].contains("Ln 2,"));
+}
+
+#[test]
+fn shift_tab_and_alt_letters_arrive_as_such_in_both_encodings() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("t.txt");
+    std::fs::write(&f, "\t\tx").unwrap();
+    let cfg = "[editor]\nmodal = false\n[clipboard]\nbackend = \"osc52\"\n";
+    for term in [Term::Kitty, Term::Legacy] {
+        let mut pty = Pty::spawn_term(dir.path(), cfg, Some(&f), &[], term);
+        pty.wait_for("start", |s| s[0].contains('x'));
+        pty.send(if term == Term::Kitty { "\x1b[9;2u" } else { "\x1b[Z" }); // Shift+Tab
+        pty.wait_for("outdented", |s| s[28].contains("[+]"));
+        pty.send(if term == Term::Kitty { "\x1b[97;5u" } else { "\x01" }); // Ctrl+A
+        pty.send(if term == Term::Kitty { "\x1b[99;3u" } else { "\x1bc" }); // Alt+C = copy
+        pty.wait_for("copy message", |s| s[29].contains("copied"));
+    }
+}

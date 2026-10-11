@@ -7,8 +7,9 @@ use crate::config::Config;
 use crate::find::{next_match, prev_match};
 use crate::findbar::{self, FindBar, TextField, contains};
 use crate::indent::{self, Indent};
+use crate::keyspec::{self, Chord};
 use crate::picker::{self, Picker, PickerItem, PickerKind};
-use crate::sql::{self, DbError, ResultSet, Session, profile};
+use crate::sql::{self, DbError, ResultSet, Session, profile, stmt};
 use crate::suggest::{self, Suggestions};
 use crate::syntax::{self, Kind, LangSpec};
 use crate::table::{self, TableOpts, TableState};
@@ -122,6 +123,11 @@ pub struct App {
     /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
     pub lang_override: Option<&'static LangSpec>,
     pub picker: Option<Picker>,
+    /// Does the terminal speak the kitty keyboard protocol? `None` until detected (tests, startup).
+    pub kitty: Option<bool>,
+    kitty_notice_shown: bool,
+    run_fallback: Chord,
+    run_line_key: Chord,
     pub suggest: Option<SuggestState>,
     /// Buffer version at which the user pressed Esc on the popup (it stays closed until the next edit).
     suggest_dismissed: Option<u64>,
@@ -130,6 +136,8 @@ pub struct App {
     pub sql: SqlUi,
     pub warnings: Vec<String>,
 }
+
+pub const DISCONNECTED_MSG: &str = "Not connected to a database. Use :connect <profile>";
 
 fn first_line(b: &Buffer) -> String {
     b.line(0)
@@ -195,6 +203,9 @@ impl App {
         let lang = syntax::detect(buffer.path.as_deref(), &first_line(&buffer));
         let mode = if cfg.editor.modal { Mode::Normal } else { Mode::Insert };
         let find = FindBar::new(&cfg.find);
+        let default_chord = |spec: &str| keyspec::parse(spec).expect("built-in key spec");
+        let run_fallback = keyspec::parse(&cfg.sql.run_fallback_key).unwrap_or_else(|| default_chord("alt+enter"));
+        let run_line_key = keyspec::parse(&cfg.sql.run_line_key).unwrap_or_else(|| default_chord("alt+l"));
         App {
             cfg,
             buffer,
@@ -221,6 +232,10 @@ impl App {
             lang,
             lang_override: None,
             picker: None,
+            kitty: None,
+            kitty_notice_shown: false,
+            run_fallback,
+            run_line_key,
             suggest: None,
             suggest_dismissed: None,
             suggest_seen: 0,
@@ -232,6 +247,43 @@ impl App {
     /// Re-derive the language: the manual `:setlang` choice wins over detection by extension.
     pub fn update_lang(&mut self) {
         self.lang = self.lang_override.unwrap_or_else(|| syntax::detect(self.buffer.path.as_deref(), &first_line(&self.buffer)));
+        self.maybe_kitty_notice();
+    }
+
+    /// True while edits are refused: a SQL buffer with no database connection
+    /// (see `sql.block_editing_when_disconnected`).
+    pub fn edit_blocked(&self) -> bool {
+        self.cfg.sql.block_editing_when_disconnected && self.lang.name == syntax::SQL.name && self.sql.session.is_none()
+    }
+
+    /// Tell the user once, in a SQL buffer, that this terminal cannot send Ctrl+Enter.
+    pub fn maybe_kitty_notice(&mut self) {
+        if self.kitty == Some(false) && self.lang.name == syntax::SQL.name && !self.kitty_notice_shown {
+            self.kitty_notice_shown = true;
+            // short enough to fit an 80-column terminal; docs/KEYBINDINGS.md has the full story
+            self.flash(format!("Ctrl+Enter unavailable (no kitty keyboard protocol): use {} or :run", self.run_fallback));
+        }
+    }
+
+    pub fn set_kitty(&mut self, supported: bool) {
+        self.kitty = Some(supported);
+        self.maybe_kitty_notice();
+    }
+
+    /// Run `f` as one user action. While editing is blocked the buffer refuses changes; if the action
+    /// tried to change it, undo every side effect (cursor, selection, mode) and explain why.
+    fn guarded(&mut self, f: impl FnOnce(&mut Self)) {
+        let saved = (self.buffer.cursor, self.buffer.anchor, self.buffer.goal_col, self.mode);
+        self.buffer.read_only = self.edit_blocked();
+        self.buffer.blocked_attempt = false;
+        f(self);
+        let attempted = self.buffer.blocked_attempt;
+        self.buffer.read_only = false;
+        self.buffer.blocked_attempt = false;
+        if attempted {
+            (self.buffer.cursor, self.buffer.anchor, self.buffer.goal_col, self.mode) = saved;
+            self.flash(DISCONNECTED_MSG);
+        }
     }
 
     pub fn set_lang(&mut self, mode: Option<&'static LangSpec>) {
@@ -373,6 +425,9 @@ impl App {
         if !self.modal() {
             return;
         }
+        if m == Mode::Insert && self.edit_blocked() {
+            return self.flash(DISCONNECTED_MSG);
+        }
         self.buffer.break_group();
         self.mode = m;
     }
@@ -492,9 +547,11 @@ impl App {
         if k.kind == KeyEventKind::Release {
             return;
         }
-        if !self.suggest_key(&k) {
-            self.handle_key_inner(k);
-        }
+        self.guarded(|a| {
+            if !a.suggest_key(&k) {
+                a.handle_key_inner(k);
+            }
+        });
         self.refresh_suggestions();
     }
 
@@ -514,6 +571,14 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let alt = k.modifiers.contains(KeyModifiers::ALT);
         let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+
+        // SQL run keys: Ctrl+Enter (needs the kitty keyboard protocol), the configurable fallback, and run-line
+        if (k.code == KeyCode::Enter && ctrl && !alt) || self.run_fallback.matches(&k) {
+            return self.sql_run_smart();
+        }
+        if self.run_line_key.matches(&k) {
+            return self.sql_run_line();
+        }
 
         if ctrl
             && !alt
@@ -563,7 +628,6 @@ impl App {
         match k.code {
             KeyCode::F(3) => return self.find_step(!shift),
             KeyCode::F(4) => return self.toggle_table_focus(),
-            KeyCode::F(5) => return self.sql_run_selection(),
             KeyCode::F(6) => return self.sql_run_buffer(),
             KeyCode::F(7) => return self.sql_cancel(),
             _ => {}
@@ -576,7 +640,7 @@ impl App {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
-        self.handle_paste_inner(text);
+        self.guarded(|a| a.handle_paste_inner(text));
         self.refresh_suggestions();
     }
 
@@ -1696,6 +1760,12 @@ impl App {
             }
             "setlang" | "setlanguage" => self.exec_setlang(arg),
             "snippets" | "snippet" => self.open_snippets(),
+            "connect" => self.exec_sql(&format!("connect {arg}")),
+            "disconnect" => self.sql_disconnect(),
+            "run" => self.sql_run_smart(),
+            "runline" => self.sql_run_line(),
+            "runbuffer" => self.sql_run_buffer(),
+            "cancel" => self.sql_cancel(),
             "sql" => self.exec_sql(arg),
             n if n.parse::<usize>().is_ok() => {
                 let l = n.parse::<usize>().unwrap().saturating_sub(1);
@@ -1736,7 +1806,8 @@ impl App {
                 self.sql_connect(rest)
             }
             "disconnect" => self.sql_disconnect(),
-            "run" => self.sql_run_selection(),
+            "run" => self.sql_run_smart(),
+            "runline" => self.sql_run_line(),
             "buffer" => self.sql_run_buffer(),
             "cancel" => self.sql_cancel(),
             "close" => {
@@ -1757,7 +1828,7 @@ impl App {
                 Ok(p) => self.flash(format!("profiles: {}", p.keys().cloned().collect::<Vec<_>>().join(", "))),
                 Err(e) => self.flash(e),
             },
-            _ => self.flash("usage: :sql connect NAME | disconnect | run | buffer | cancel | close | show | profiles"),
+            _ => self.flash("usage: :connect NAME | :disconnect | :run | :runline | :runbuffer | :cancel | :sql close|show|profiles"),
         }
     }
 
@@ -1810,7 +1881,7 @@ impl App {
     fn sql_start(&mut self, text: String, origin: (usize, usize)) {
         let limit = self.cfg.sql.row_limit;
         let Some(s) = &mut self.sql.session else {
-            return self.flash("not connected (:sql connect PROFILE)");
+            return self.flash(DISCONNECTED_MSG);
         };
         if text.trim().is_empty() {
             return self.flash("nothing to run");
@@ -1826,19 +1897,39 @@ impl App {
         }
     }
 
-    pub fn sql_run_selection(&mut self) {
-        match self.selection_range() {
-            Some(r) if r.start < r.end => {
-                let text = self.buffer.slice(r.clone());
-                let (l, c) = self.buffer.line_col(r.start);
-                if matches!(self.mode, Mode::Visual | Mode::VisualLine) {
-                    self.buffer.anchor = None;
-                    self.mode = Mode::Normal;
-                }
-                self.sql_start(text, (l, c));
-            }
-            _ => self.flash("no selection (select SQL, or use :sql buffer to run the whole buffer)"),
+    /// SQL dialect of the connected driver, for splitting statements.
+    fn sql_dialect(&self) -> stmt::Dialect {
+        match self.sql.session.as_ref().map(|s| s.engine) {
+            Some(profile::Engine::MariaDb) => stmt::MARIADB,
+            Some(profile::Engine::Postgres) => stmt::POSTGRES,
+            None => stmt::GENERIC,
         }
+    }
+
+    /// Ctrl+Enter / `:run`: the selection, or the statement under the cursor when nothing is selected.
+    pub fn sql_run_smart(&mut self) {
+        let range = match self.selection_range() {
+            Some(r) if r.start < r.end => Some(r),
+            _ => stmt::statement_at(&self.buffer.text(), self.buffer.cursor, self.sql_dialect()),
+        };
+        let Some(r) = range else { return self.flash("nothing to run here") };
+        let text = self.buffer.slice(r.clone());
+        let (l, c) = self.buffer.line_col(r.start);
+        if matches!(self.mode, Mode::Visual | Mode::VisualLine) {
+            self.buffer.anchor = None;
+            self.mode = Mode::Normal;
+        }
+        self.sql_start(text, (l, c));
+    }
+
+    /// `:runline`: only the line the cursor is on.
+    pub fn sql_run_line(&mut self) {
+        let l = self.buffer.cursor_line_col().0;
+        let text = self.buffer.line(l);
+        if text.trim().is_empty() {
+            return self.flash("this line is empty");
+        }
+        self.sql_start(text, (l, 0));
     }
 
     pub fn sql_run_buffer(&mut self) {
@@ -2012,6 +2103,7 @@ impl App {
         match p.kind {
             PickerKind::Language => self.exec_setlang(&item.value),
             PickerKind::Snippet => {
+                self.buffer.read_only = false; // an explicit command: allowed even while disconnected
                 self.buffer.break_group();
                 self.insert_text(&item.value);
                 self.buffer.break_group();
@@ -2171,7 +2263,7 @@ impl App {
     // ------------------------------------------------------------------
 
     pub fn handle_mouse(&mut self, m: MouseEvent) {
-        self.handle_mouse_inner(m);
+        self.guarded(|a| a.handle_mouse_inner(m));
         self.refresh_suggestions();
     }
 

@@ -145,17 +145,17 @@ fn line_numbers_can_be_turned_off() {
 #[test]
 fn status_bar_shows_file_modified_position_and_type() {
     let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("q.sql");
-    std::fs::write(&p, "select 1;\nselect 2;\n").unwrap();
+    let p = dir.path().join("q.go");
+    std::fs::write(&p, "package a\nfunc b() {}\n").unwrap();
     let (mut app, _) = app_with("");
     app.open_file(&p);
     let s = screen(&mut app);
     let status = &s[22];
     assert!(status.contains("NORMAL"), "{status:?}");
-    assert!(status.contains("q.sql"), "{status:?}");
+    assert!(status.contains("q.go"), "{status:?}");
     assert!(!status.contains("[+]"));
     assert!(status.contains("Ln 1, Col 1"), "{status:?}");
-    assert!(status.contains("SQL"), "{status:?}");
+    assert!(status.contains("Go"), "{status:?}");
     press(&mut app, "A");
     typed(&mut app, "x");
     let status = screen(&mut app)[22].clone();
