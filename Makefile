@@ -1,7 +1,7 @@
 # Works the same from fish, bash or zsh:  make test
 CARGO ?= cargo
 
-.PHONY: build install test test-unit test-prop test-prop-long test-snapshots test-ui test-integration \
+.PHONY: build install test test-unit test-prop test-prop-long test-snapshots test-ui test-integration test-sync \
         update-snapshots docs report lint fmt clean
 
 build:
@@ -13,7 +13,7 @@ install:
 	cp completions/kuro.fish $(HOME)/.config/fish/completions/kuro.fish
 
 # everything, in order; stops at the first failing group
-test: test-unit test-prop test-snapshots test-ui test-integration
+test: test-unit test-prop test-snapshots test-ui test-sync test-integration
 
 # pure logic, input parser, config, docs checks (config options and keybindings, both directions), recorded error fixtures
 test-unit:
@@ -38,6 +38,11 @@ update-snapshots:
 test-ui:
 	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest --test ui_password \
 	  --test color_rule --test pty_ui
+
+# live sync: simulator, real sockets and locks, several editors, several real processes (SIGKILL of the leader)
+test-sync:
+	$(CARGO) test --lib sync
+	$(CARGO) test --test sync_sim --test sync_net --test ui_sync --test pty_sync
 
 # real MariaDB + PostgreSQL in throwaway Docker containers (skipped with a message if Docker is unavailable;
 # set KURO_REQUIRE_DOCKER=1 to make that a failure, as CI does)

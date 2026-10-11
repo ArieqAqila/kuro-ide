@@ -32,14 +32,10 @@ All of these work the same from fish, bash and zsh. `sh scripts/ci.sh` is what C
 | UI (cell buffer) | `test-ui` | `tests/ui_render.rs`, `ui_sql.rs`, `ui_sql_run.rs`, `ui_indent.rs`, `ui_modes.rs`, `ui_suggest.rs`, `color_rule.rs` | what is painted and how input changes it: gutter and the line-number regression, find bar, mouse, clipboard, modal and modeless editing, indentation keys, result table, query flow with a fake driver, pickers, suggestions, and the colour rule |
 | Pseudo-terminal | `test-ui` | `tests/pty_ui.rs` | the real `kuro` binary in a pty, screen read through a terminal emulator (`vt100`): first paint, no background, find bar top-right, SGR mouse, Ctrl+C/V, quit prompt, the kitty / legacy / silent terminal behaviours, lone Esc, and the raw output scanned for truecolor, 256-colour and background sequences |
 | Integration | `test-integration` | `tests/integration_sql.rs`, `tests/pty_sql.rs` | PostgreSQL 16 and MariaDB 11 in throwaway containers: connect, typed results, syntax / runtime / execution errors, wrong password, 200 000-row result with `row_limit`, cancel, server-side timeout, connection loss, NULLs, warnings and notices, and **every snippet executed on both servers**; plus a full SQL session in the real binary |
+| Concurrency (simulator) | `test-sync` | `src/sync/*` unit tests, `tests/sync_sim.rs` | operational transformation (every pair of operations converges), the leader's ordering, shared undo, atomic save and conflict rules, journal and recovery, and a deterministic multi-terminal simulator: random delivery order, a leader or follower killed at every step, saves failing half-way, external file changes during a handover. Seeds are fixed, so a failure reproduces |
+| Concurrency (real sockets) | `test-sync` | `tests/sync_net.rs`, `tests/ui_sync.rs` | real Unix sockets, `flock` leader election, journal files and atomic saves in a temp dir, several terminals as threads: live edits, concurrent typing, handover, save during a handover, journal after every process died, permissions, the size limit; and the editor on top (cursor and scroll anchoring, shared undo/save/quit, the shared SQL buffer) |
+| Concurrency (processes) | `test-sync` | `tests/pty_sync.rs` | separate `kuro` processes in pseudo-terminals on one file: edits reach the other screen, save from either, **`SIGKILL` of the leader** (the other takes over and loses nothing), **`SIGKILL` of every process** (unsaved text restored from the journal) |
 | Opt-in | (manual) | `tests/clipboard_real.rs` | the machine's real clipboard: `env KURO_TEST_REAL_CLIPBOARD=1 cargo test --test clipboard_real` (saves and restores a text clipboard; refuses to run if it holds anything else) |
-
-### Not implemented yet (waiting for design approval)
-
-* **Concurrency tests** (two or more kuro clients against one daemon) and the shared SQL buffer: they need the live-sync
-  design in Part 3.3 of the task, which has been proposed but not approved.
-* **Password-cache tests** (reuse on reconnect, wrong password clears, cleared on exit, never on disk): they need the
-  password-storage design in Part 4.6, also proposed and not approved.
 
 ## Rules every test follows
 
@@ -82,7 +78,9 @@ ignored and skipped, then exits non-zero on any failure. Run it before every com
 * **Mouse and key encodings of a specific terminal** (foot, kitty, WezTerm, GNOME Terminal, tmux, ssh): the pty tests
   emulate a generic xterm with SGR mouse, and a kitty-protocol, legacy or silent terminal for keys.
 * **Database versions** other than PostgreSQL 16 and MariaDB 11, TLS connections, MySQL.
-* **The OS keyring** (design for password storage pending approval).
+* **The OS keyring**: not used. Passwords are kept in process memory only (see the README).
+* **Live sync on other platforms or file systems**: tested on Linux with a local file system; `flock` on network file systems and non-Linux systems is not tested. Sync sockets live in the runtime directory, never on the file's file system.
+* **Power loss during a save**: the rename is atomic and the file is `fsync`ed, but a real power cut is not simulated; the save-failure paths are tested with injected faults.
 * **Very large files and result sets** beyond the 200 000-row case.
 
 ## Changes to existing tests (and why)

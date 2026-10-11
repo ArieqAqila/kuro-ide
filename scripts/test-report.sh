@@ -11,7 +11,10 @@ layer_of() {
     prop) echo "property/fuzz" ;;
     snapshots) echo "snapshot" ;;
     ui_render|ui_sql|ui_sql_run|ui_indent|ui_modes|ui_suggest|ui_password|color_rule) echo "ui (cell buffer)" ;;
+    sync_sim) echo "concurrency (simulator)" ;;
+    sync_net|ui_sync) echo "concurrency (real sockets)" ;;
     pty_ui) echo "pty (real binary)" ;;
+    pty_sync) echo "concurrency (processes)" ;;
     integration_sql|pty_sql) echo "integration (docker)" ;;
     clipboard_real) echo "opt-in (real clipboard)" ;;
     *) echo "other" ;;

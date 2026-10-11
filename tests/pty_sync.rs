@@ -81,7 +81,7 @@ fn killing_the_leader_process_loses_nothing_and_the_other_terminal_takes_over() 
     b.wait_for("saved", |s| row(s, "written"));
     assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "A1 one\ntwo\nB1B2");
     // a newcomer joins the new leader and sees the saved text
-    let mut c = terminal(&e, "c");
+    let c = terminal(&e, "c");
     c.wait_for("c opens", |s| row(s, "A1 one"));
     assert!(c.screen()[28].contains("sync"));
 }

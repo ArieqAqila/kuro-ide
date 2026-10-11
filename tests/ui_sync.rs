@@ -40,6 +40,8 @@ enum Cmd {
     Typed(String),
     Press(String),
     Run(String),
+    /// Pretend to be connected to a database that records what it is asked to run.
+    Attach(common::fakedb::Log),
     Cursor(usize),
     Top(usize),
     Snap(Sender<Snap>),
@@ -76,6 +78,10 @@ impl Term {
                     Ok(Cmd::Typed(s)) => typed(&mut app, &s),
                     Ok(Cmd::Press(k)) => press(&mut app, &k),
                     Ok(Cmd::Run(c)) => app.exec_command(&c),
+                    Ok(Cmd::Attach(log)) => {
+                        let db = common::fakedb::Recorder { engine: kuro::sql::profile::Engine::Postgres, log };
+                        app.sql.session = Some(kuro::sql::Session::new(Box::new(db)));
+                    }
                     Ok(Cmd::Cursor(c)) => app.buffer.cursor = c,
                     Ok(Cmd::Top(t)) => app.top_line = t,
                     Ok(Cmd::Snap(reply)) => {
@@ -281,4 +287,31 @@ fn colon_w_and_colon_wq_work_with_sync() {
     let s = a.wait("quits after the save", |s| s.quit);
     assert!(s.quit);
     assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "12x\n");
+}
+
+#[test]
+fn a_sql_file_open_in_two_terminals_is_one_shared_buffer_and_runs_the_shared_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("queries.sql");
+    std::fs::write(&file, "select 1;\n").unwrap();
+    let e = Env { runtime: dir.path().join("run"), state: dir.path().join("state"), file: file.clone(), _dir: dir };
+    let a = Term::open(&e, 1, MAX);
+    let b = Term::open(&e, 2, MAX);
+    // a SQL file is read-only until connected (disconnected state), so both terminals connect first
+    let log_a: common::fakedb::Log = Default::default();
+    a.tx.send(Cmd::Attach(log_a)).unwrap();
+    a.press("ctrl+end");
+    a.typed("select 2;");
+    b.wait("the new statement reaches b", |s| s.text == "select 1;\nselect 2;");
+    let log: common::fakedb::Log = Default::default();
+    b.tx.send(Cmd::Attach(log.clone())).unwrap();
+    b.press("ctrl+end");
+    b.run("run");
+    let t = Instant::now();
+    while log.lock().unwrap().is_empty() {
+        b.snap(); // keeps the terminal ticking so the statement is sent
+        assert!(t.elapsed() < Duration::from_secs(10), "nothing was run");
+        std::thread::yield_now();
+    }
+    assert_eq!(log.lock().unwrap().as_slice(), ["select 2;"], "b ran the statement a typed");
 }

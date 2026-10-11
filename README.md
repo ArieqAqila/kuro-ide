@@ -66,6 +66,14 @@ is in [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md), including how to map a col
 
 For a VS Code feel: `[editor] modal = false`. For spaces instead of tabs: `indent_style = "spaces"`, `indent_size = 4`.
 
+## Several terminals, one file
+
+Open the same file in two or more kuro terminals and they stay in step like VS Code tabs: unsaved edits appear
+everywhere, undo/redo and save are shared, and saving from any terminal writes everything. If a kuro process dies
+nothing is lost (another one takes over; if all die, the next start restores the unsaved text). There is nothing to
+start or install. Details and limits (files over `sync.max_file_mib`, CRLF files, conflicts with outside changes):
+**[docs/SYNC.md](docs/SYNC.md)**.
+
 ## Keys
 
 The complete, generated list is in **[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)**. The ones to know:
@@ -158,6 +166,7 @@ make test-unit          # logic, input parser, config and keybinding docs checks
 make test-prop          # property / fuzz tests (make test-prop-long for the nightly-size run)
 make test-snapshots     # golden screens
 make test-ui            # cell-buffer UI tests and the real binary in a pty
+make test-sync          # live sync: simulator, real sockets, several editors, several processes with SIGKILL
 make test-integration   # real PostgreSQL and MariaDB in throwaway Docker containers
 make lint               # fmt --check + clippy
 make docs               # regenerate the keybinding tables
@@ -174,9 +183,10 @@ afterwards; they never connect to anything else. Without Docker they print `SKIP
 ```
 src/            app.rs (input), render.rs (drawing), input.rs (terminal input parser), buffer.rs, find.rs, findbar.rs,
                 indent.rs, suggest.rs, picker.rs, snippets.rs, syntax.rs, table.rs, keymap.rs, keyspec.rs, ansi.rs,
-                clipboard.rs, config.rs, sql/ (drivers, worker, profiles, classify, stmt)
+                clipboard.rs, config.rs, sql/ (drivers, worker, profiles, classify, stmt),
+                sync/ (live sync: ot, replica, leader, node, cluster simulator, net, real files and journal)
 config/default/ config.toml (all options) and connections.example.toml
-docs/           CUSTOMIZATION.md, KEYBINDINGS.md, TESTING.md, ENVIRONMENT.md, ARCHITECTURE.md
+docs/           CUSTOMIZATION.md, KEYBINDINGS.md, SYNC.md, TESTING.md, ENVIRONMENT.md, ARCHITECTURE.md
 tests/          unit-level fixtures, property, snapshot, UI, pty, integration, docs checks
 ```
 

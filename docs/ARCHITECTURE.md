@@ -30,3 +30,24 @@ the kitty-protocol query and the event loop.
 Data flow: terminal event → `App::handle_key/handle_mouse` → state change → `App::render(&mut Buffer)` →
 ratatui diffs it onto the terminal. Query results come back from the worker through a channel and are picked up
 by `App::tick()`.
+
+## Live sync (see [SYNC.md](SYNC.md) for behaviour)
+
+`src/sync/` is built as pure state machines with the I/O at the edge, so the hard parts can be tested without
+sockets or timing:
+
+* `ot` — operations (`Ins`, `Del`, `Mark`) and the transformation function.
+* `replica` — one terminal's copy: unconfirmed edits, the stream from the leader, remote operations adjusted to the
+  local unconfirmed edits.
+* `leader` — the total order, shared undo/redo, atomic save with the disk check, external-change handling, the
+  journal and the recovery window after a hand-over.
+* `node` — a terminal as a leader-or-follower that can be promoted; carries a save across a hand-over.
+* `cluster`, `sim` — a deterministic simulator (random delivery, kills, simulated lock, faulty file system) used by
+  the tests; `storage` abstracts the file system and journal.
+* `net`, `real` — the real thing: Unix sockets, `flock` leader lock, real files and journal. `SyncHandle` runs on the
+  editor's thread (`App::sync_pump` from `tick`); helper threads only move bytes into a queue, which keeps the order
+  of remote effects identical to the leader's order.
+
+`Buffer` records every edit as operations in an outbox while synced; `App` hands them to the group before applying
+anything that arrived, then applies remote operations without touching the local undo stack and moves the cursor,
+selection and top line along with the text.

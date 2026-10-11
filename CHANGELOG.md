@@ -11,6 +11,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **Live sync** between terminals that have the same file open (like VS Code tabs): unsaved edits appear everywhere,
+  undo/redo and save are shared, the cursor and scroll position stay on the same text, and nothing is lost when a kuro
+  process is killed (leader hand-over, recovery window, journal). New `[sync]` options `enabled` and `max_file_mib`
+  (default 5), `:w!` to overwrite a file that changed on disk, atomic saves with a safety check for every file. A SQL
+  file is shared the same way. See `docs/SYNC.md`.
+- SQL passwords are remembered in memory only, per profile/host/port/user/database, and reused on reconnect; cleared
+  on exit, `:sql forget` and a wrong password; never written to disk, logged or hashed.
 - Hard tabs by default: `editor.indent_style` (`tabs`/`spaces`), `editor.indent_size`, and `editor.smart_whitespace_delete`.
 - VS Code-style Tab / Shift+Tab / Backspace / Delete: a selection over several lines (or one whole line) indents/outdents
   every touched line as one undo step; Shift+Tab with no selection outdents the current line; Backspace in leading
