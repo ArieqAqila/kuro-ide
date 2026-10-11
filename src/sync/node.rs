@@ -71,8 +71,10 @@ pub struct Node {
     fs_factory: FsFactory,
     journal_factory: JournalFactory,
     now_ms: u64,
-    /// A save requested while there was no leader: run it once a leader exists.
-    pending_save: Option<bool>,
+    /// A save we asked for and have not heard back about (answer: Saved / refused / failed).
+    awaiting_save: Option<bool>,
+    /// The leader went away while a save was outstanding: ask again once a new leader is ready.
+    resend_save: bool,
 }
 
 impl Node {
@@ -95,7 +97,8 @@ impl Node {
             fs_factory,
             journal_factory,
             now_ms,
-            pending_save: None,
+            awaiting_save: None,
+            resend_save: false,
         };
         let mut out: Vec<Output> = notices.into_iter().map(Output::Notice).collect();
         let outs = node.leader.as_mut().unwrap().join(id);
@@ -133,6 +136,7 @@ impl Node {
             // a message to ourselves may produce effects that ask the leader for something (sending buffered edits)
             for m in mine {
                 let effects = self.replica.receive(m);
+                self.note_save_result(&effects);
                 for e in effects {
                     match e {
                         Effect::Send(msg) => queue.extend(self.leader.as_mut().unwrap().handle(self.id, msg)),
@@ -179,25 +183,25 @@ impl Node {
             }
             Input::LocalSave { force } => match self.state {
                 State::Live => {
+                    self.awaiting_save = Some(force);
                     let e = self.replica.request_save(force);
                     self.effects(vec![e])
                 }
                 State::Electing => {
-                    self.pending_save = Some(force);
+                    self.awaiting_save = Some(force);
+                    self.resend_save = true;
                     vec![Output::Editor(Effect::Notice("saving as soon as sync reconnects…".into()))]
                 }
                 State::Standalone => vec![Output::Editor(Effect::SaveFailed("sync is not connected: saving locally".into()))],
             },
             Input::FromLeader(msg) => {
+                let rejoined = matches!(msg, ServerMsg::Rejoined { .. });
                 let eff = self.replica.receive(msg);
+                self.note_save_result(&eff);
                 let mut out = self.effects(eff);
-                // a save asked for during the outage goes out once we are connected again
-                if self.state == State::Live
-                    && self.replica.joined
-                    && let Some(force) = self.pending_save.take()
-                {
-                    let e = self.replica.request_save(force);
-                    out.extend(self.effects(vec![e]));
+                // a save that was in flight when the leader died goes out again once we are connected to the new one
+                if rejoined {
+                    out.extend(self.resend_pending_save());
                 }
                 out
             }
@@ -219,6 +223,7 @@ impl Node {
                 if self.leader.is_some() {
                     return vec![];
                 }
+                self.resend_save |= self.awaiting_save.is_some();
                 self.state = State::Electing;
                 self.replica.leader_lost();
                 vec![Output::Editor(Effect::Notice("sync leader lost: re-connecting…".into())), Output::TryElection]
@@ -281,11 +286,29 @@ impl Node {
         let rejoin = self.replica.rejoin_msg();
         let outs = self.leader.as_mut().unwrap().handle(self.id, rejoin);
         out.extend(self.route(outs));
-        if let Some(force) = self.pending_save.take() {
-            let e = self.replica.request_save(force);
-            out.extend(self.effects(vec![e]));
-        }
+        out.extend(self.resend_pending_save());
         out
+    }
+
+    fn note_save_result(&mut self, effects: &[Effect]) {
+        if effects.iter().any(|e| matches!(e, Effect::Saved { .. } | Effect::SaveRefused(_) | Effect::SaveFailed(_))) {
+            self.awaiting_save = None;
+            self.resend_save = false;
+        }
+    }
+
+    fn resend_pending_save(&mut self) -> Vec<Output> {
+        if !self.resend_save {
+            return vec![];
+        }
+        self.resend_save = false;
+        match self.awaiting_save {
+            Some(force) if self.state == State::Live => {
+                let e = self.replica.request_save(force);
+                self.effects(vec![e])
+            }
+            _ => vec![],
+        }
     }
 }
 
@@ -301,7 +324,8 @@ impl Node {
             fs_factory,
             journal_factory,
             now_ms: 0,
-            pending_save: None,
+            awaiting_save: None,
+            resend_save: false,
         }
     }
 }

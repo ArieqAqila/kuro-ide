@@ -19,6 +19,8 @@ pub const SYSTEM: ClientId = 0;
 pub const LOG_CAP: usize = 4096;
 const JOURNAL_FLUSH_MS: u64 = 1000;
 const DISK_CHECK_MS: u64 = 500;
+/// The journal is only compacted once it is at least this big (and 4x the document).
+pub const JOURNAL_COMPACT_MIN: usize = 1 << 20;
 
 type Group = Vec<Op>;
 
@@ -84,6 +86,8 @@ pub struct LeaderCore {
     fs: Box<dyn Fs>,
     journal: Box<dyn Journal>,
     journal_dirty: bool,
+    /// Roughly how much has been appended to the journal since it was last reset or compacted.
+    journal_bytes: usize,
     last_flush_ms: u64,
     last_disk_check_ms: u64,
     notices: Vec<String>,
@@ -140,6 +144,7 @@ impl LeaderCore {
             fs,
             journal: Box::new(NullJournal),
             journal_dirty: false,
+            journal_bytes: 0,
             last_flush_ms: now_ms,
             last_disk_check_ms: now_ms,
             notices: vec![],
@@ -212,6 +217,7 @@ impl LeaderCore {
             fs,
             journal,
             journal_dirty: false,
+            journal_bytes: 0,
             last_flush_ms: now_ms,
             last_disk_check_ms: 0,
             notices: vec![],
@@ -362,6 +368,7 @@ impl LeaderCore {
             self.notices.push("could not write the recovery journal".into());
         }
         self.journal_dirty = true;
+        self.journal_bytes += entry.ops.iter().map(|o| match o { Op::Ins { text, .. } | Op::Del { text, .. } => text.len() + 24, Op::Mark => 8 }).sum::<usize>() + 64;
         entry
     }
 
@@ -505,6 +512,7 @@ impl LeaderCore {
             self.notices.push("could not reset the recovery journal".into());
         }
         self.journal_dirty = false;
+        self.journal_bytes = 0;
         vec![all(ServerMsg::Saved { rev: self.rev, disk_hash: self.disk_hash.clone() })]
     }
 
@@ -519,6 +527,7 @@ impl LeaderCore {
         if self.journal_dirty && now_ms.saturating_sub(self.last_flush_ms) >= JOURNAL_FLUSH_MS {
             self.flush_journal(now_ms);
         }
+        self.maybe_compact_journal();
         if now_ms.saturating_sub(self.last_disk_check_ms) >= DISK_CHECK_MS {
             self.last_disk_check_ms = now_ms;
             out.extend(self.check_disk());
@@ -531,6 +540,27 @@ impl LeaderCore {
         let _ = self.journal.flush();
         self.journal_dirty = false;
         self.last_flush_ms = now_ms;
+    }
+
+    /// Keep the journal small: when it has grown well past the size of the document, replace it with the one
+    /// change that turns the file on disk into the current text.
+    fn maybe_compact_journal(&mut self) {
+        let limit = (4 * self.doc.len_bytes()).max(JOURNAL_COMPACT_MIN);
+        if self.journal_bytes <= limit || self.recovery.is_some() || self.rev == 0 {
+            return;
+        }
+        let Ok(bytes) = self.fs.read(&self.path) else { return };
+        if hash_bytes(&bytes) != self.disk_hash {
+            return; // the file moved on: the journal's base is no longer what is on disk
+        }
+        let Ok(base_text) = valid_utf8(&bytes) else { return };
+        let ops = ot::diff_ops(&base_text, &self.doc.to_string());
+        let entries = if ops.is_empty() { vec![] } else { vec![Committed { rev: self.rev, origin: SYSTEM, id: None, kind: Kind::Edit, ops, focus: None }] };
+        let base_rev = if entries.is_empty() { self.rev } else { self.rev - 1 };
+        if self.journal.replace(&self.disk_hash, base_rev, &entries).is_ok() {
+            self.journal_bytes = entries.iter().map(|e| e.ops.iter().map(|o| if let Op::Ins { text, .. } | Op::Del { text, .. } = o { text.len() } else { 0 }).sum::<usize>()).sum();
+            self.journal_dirty = false;
+        }
     }
 
     fn check_disk(&mut self) -> Vec<Out> {
@@ -983,6 +1013,32 @@ mod tests {
         assert!(l2.is_dirty(), "the recovered work is still unsaved");
         assert!(l2.take_notices().iter().any(|n| n.contains("recovered 2")));
         assert_eq!(fs.read_string(P).as_deref(), Some("base"), "the file itself was never touched");
+    }
+
+    #[test]
+    fn the_journal_is_compacted_to_the_net_change_and_still_recovers_the_same_text() {
+        let (mut l, fs, j) = leader("base text\n");
+        l.join(1);
+        // many small edits that mostly cancel out
+        let mut rev = 0;
+        for i in 0..400u64 {
+            let text = "y".repeat(5000);
+            edit(&mut l, 1, i * 2 + 1, rev, vec![ins(0, &text)]);
+            rev += 1;
+            edit(&mut l, 1, i * 2 + 2, rev, vec![del(0, &text)]);
+            rev += 1;
+        }
+        edit(&mut l, 1, 9999, rev, vec![ins(10, "FINAL")]);
+        l.flush_journal(0);
+        assert!(j.durable_len() > 100, "before compaction the journal holds every edit ({})", j.durable_len());
+        l.tick(5000);
+        assert!(j.durable_len() <= 1, "after compaction a single net change remains ({})", j.durable_len());
+        let expect = l.text();
+        assert_eq!(expect, "base text\nFINAL");
+        drop(l);
+        let l2 = LeaderCore::open(1, P.into(), Box::new(fs), Box::new(j), 2, 0).unwrap();
+        assert_eq!(l2.text(), expect, "the compacted journal recovers exactly the same text");
+        assert!(l2.is_dirty());
     }
 
     #[test]

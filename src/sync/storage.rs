@@ -31,6 +31,14 @@ pub trait Journal: Send {
     fn flush(&mut self) -> io::Result<()>;
     /// Start over after a save: the file now has content hash `base_hash` and the document is at `base_rev`.
     fn reset(&mut self, base_hash: &str, base_rev: u64) -> io::Result<()>;
+    /// Atomically replace the whole journal (used to compact it): either the old contents or the new, never neither.
+    fn replace(&mut self, base_hash: &str, base_rev: u64, entries: &[Committed]) -> io::Result<()> {
+        self.reset(base_hash, base_rev)?;
+        for e in entries {
+            self.append(e)?;
+        }
+        self.flush()
+    }
     /// Whatever a previous session left behind.
     fn load(&self) -> io::Result<Option<JournalContents>>;
 }

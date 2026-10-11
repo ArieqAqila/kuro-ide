@@ -122,6 +122,15 @@ impl Journal for SimJournal {
         s.pending.clear();
         Ok(())
     }
+    fn replace(&mut self, base_hash: &str, base_rev: u64, entries: &[Committed]) -> io::Result<()> {
+        let mut s = self.0.lock().unwrap();
+        s.base_hash = base_hash.to_string();
+        s.base_rev = base_rev;
+        s.exists = true;
+        s.durable = entries.to_vec();
+        s.pending.clear();
+        Ok(())
+    }
     fn load(&self) -> io::Result<Option<JournalContents>> {
         let s = self.0.lock().unwrap();
         Ok(s.exists.then(|| JournalContents { base_hash: s.base_hash.clone(), base_rev: s.base_rev, entries: s.durable.clone() }))

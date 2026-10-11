@@ -2,9 +2,11 @@
 
 pub mod cluster;
 pub mod leader;
+pub mod net;
 pub mod node;
 pub mod ot;
 pub mod protocol;
+pub mod real;
 pub mod replica;
 pub mod sim;
 pub mod storage;

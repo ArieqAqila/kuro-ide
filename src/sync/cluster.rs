@@ -527,6 +527,26 @@ mod tests {
     }
 
     #[test]
+    fn a_save_sent_just_as_the_leader_dies_is_not_lost() {
+        for seed in 0..40 {
+            let mut c = Cluster::new("abc", seed);
+            c.add_follower(2);
+            c.add_follower(3);
+            c.run_until_idle();
+            c.insert(2, 3, "!");
+            c.run_until_idle();
+            c.save(3, false); // the request is queued towards the leader...
+            for _ in 0..(seed % 3) {
+                c.step();
+            }
+            c.kill(1); // ...which dies before (or while) answering
+            c.run_until_idle();
+            assert_eq!(c.fs.read_string(PATH).unwrap(), "abc!", "seed {seed}: the save was lost");
+            assert!(!c.members[&3].node.replica.is_modified(), "seed {seed}");
+        }
+    }
+
+    #[test]
     fn a_save_requested_during_the_outage_runs_after_the_handover() {
         let mut c = Cluster::new("abc", 17);
         c.add_follower(2);
