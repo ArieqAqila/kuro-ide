@@ -103,6 +103,21 @@ fn every_ui_element_emits_only_palette_colours() {
     press(&mut app, "esc");
     press(&mut app, ":");
     assert_clean(&mut app, "command line");
+    press(&mut app, "esc");
+    press(&mut app, "alt+s");
+    assert_clean(&mut app, "snippet picker");
+    press(&mut app, "esc");
+}
+
+#[test]
+fn suggestion_popup_emits_only_palette_colours() {
+    let mut cfg = Config::default();
+    cfg.editor.modal = false;
+    let (mut app, _) = app_cfg("hello help helmet\n", cfg);
+    app.buffer.cursor = app.buffer.len_chars();
+    typed(&mut app, "hel");
+    assert!(app.suggest.is_some());
+    assert_clean(&mut app, "suggestion popup");
 }
 
 #[test]

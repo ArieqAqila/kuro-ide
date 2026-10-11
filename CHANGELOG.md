@@ -29,6 +29,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   PostgreSQL (`information_schema`, `FETCH FIRST`, `interval`, `ON CONFLICT`, …); with no connection a generic list is
   shown and says so. The integration tests execute every snippet on real servers.
 
+- Word suggestions while typing (`editor.word_suggestions`, `editor.suggest_min_chars`): case-insensitive, prefix matches
+  before substring matches, nearest to the cursor first; Up/Down or Ctrl+N / Ctrl+P move, Tab or Enter accepts
+  (replacing the typed prefix), Esc dismisses; the popup only opens by typing and closes when the cursor leaves the word.
+
 ### Changed
 - `editor.tab_width` now defaults to `8` (was `4`); `editor.expand_tab` is replaced by `editor.indent_style`.
 - `editor.relative_numbers` now defaults to `false`.

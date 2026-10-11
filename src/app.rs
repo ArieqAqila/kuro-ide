@@ -9,6 +9,7 @@ use crate::findbar::{self, FindBar, TextField, contains};
 use crate::indent::{self, Indent};
 use crate::picker::{self, Picker, PickerItem, PickerKind};
 use crate::sql::{self, DbError, ResultSet, Session, profile};
+use crate::suggest::{self, Suggestions};
 use crate::syntax::{self, Kind, LangSpec};
 use crate::table::{self, TableOpts, TableState};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -81,6 +82,13 @@ struct Click {
     count: u8,
 }
 
+/// The word-suggestion popup.
+#[derive(Debug, Clone)]
+pub struct SuggestState {
+    pub sug: Suggestions,
+    pub selected: usize,
+}
+
 pub struct SynCache {
     version: u64,
     lang: &'static str,
@@ -114,6 +122,11 @@ pub struct App {
     /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
     pub lang_override: Option<&'static LangSpec>,
     pub picker: Option<Picker>,
+    pub suggest: Option<SuggestState>,
+    /// Buffer version at which the user pressed Esc on the popup (it stays closed until the next edit).
+    suggest_dismissed: Option<u64>,
+    /// Buffer version the popup was last evaluated at: it only *opens* because of an edit (typing).
+    suggest_seen: u64,
     pub sql: SqlUi,
     pub warnings: Vec<String>,
 }
@@ -208,6 +221,9 @@ impl App {
             lang,
             lang_override: None,
             picker: None,
+            suggest: None,
+            suggest_dismissed: None,
+            suggest_seen: 0,
             sql: SqlUi::default(),
             warnings: vec![],
         }
@@ -472,10 +488,17 @@ impl App {
     // keyboard
     // ------------------------------------------------------------------
 
-    pub fn handle_key(&mut self, mut k: KeyEvent) {
+    pub fn handle_key(&mut self, k: KeyEvent) {
         if k.kind == KeyEventKind::Release {
             return;
         }
+        if !self.suggest_key(&k) {
+            self.handle_key_inner(k);
+        }
+        self.refresh_suggestions();
+    }
+
+    fn handle_key_inner(&mut self, mut k: KeyEvent) {
         // legacy terminals send BackTab, kitty-protocol terminals send Tab+Shift: treat both as Shift+Tab
         if k.code == KeyCode::Tab && k.modifiers.contains(KeyModifiers::SHIFT) {
             k.code = KeyCode::BackTab;
@@ -553,6 +576,11 @@ impl App {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        self.handle_paste_inner(text);
+        self.refresh_suggestions();
+    }
+
+    fn handle_paste_inner(&mut self, text: &str) {
         match self.focus {
             Focus::Find => self.paste_into_field_text(text),
             Focus::Prompt => {
@@ -566,6 +594,81 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    // ------------------------------------------------------------------
+    // word suggestions
+    // ------------------------------------------------------------------
+
+    /// Recompute the popup after any input: it exists only while typing in a word in the editor.
+    pub fn refresh_suggestions(&mut self) {
+        let want = self.cfg.editor.word_suggestions
+            && self.focus == Focus::Editor
+            && (self.mode == Mode::Insert || !self.modal())
+            && self.buffer.selection().is_none()
+            && self.suggest_dismissed != Some(self.buffer.version);
+        let edited = self.buffer.version != self.suggest_seen;
+        self.suggest_seen = self.buffer.version;
+        let mut found = if want && (edited || self.suggest.is_some()) {
+            suggest::suggest(&self.buffer.text(), self.buffer.cursor, self.cfg.editor.suggest_min_chars, 8)
+        } else {
+            None
+        };
+        // moving the cursor (without typing) can shrink the list, never open or move it to another word
+        if !edited {
+            let same_word = |f: &Suggestions| self.suggest.as_ref().is_some_and(|o| o.sug.prefix_start == f.prefix_start);
+            if found.as_ref().is_some_and(|f| !same_word(f)) {
+                found = None;
+            }
+        }
+        self.suggest = found.map(|sug| {
+            // keep the highlighted word while the list changes under it
+            let selected = self
+                .suggest
+                .as_ref()
+                .filter(|old| old.sug.prefix_start == sug.prefix_start)
+                .and_then(|old| old.sug.items.get(old.selected))
+                .and_then(|w| sug.items.iter().position(|i| i == w))
+                .unwrap_or(0);
+            SuggestState { sug, selected }
+        });
+    }
+
+    /// Keys that belong to the popup while it is open. Returns true if the key was consumed.
+    fn suggest_key(&mut self, k: &KeyEvent) -> bool {
+        let Some(st) = &mut self.suggest else { return false };
+        if self.focus != Focus::Editor {
+            return false;
+        }
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let plain = !ctrl && !k.modifiers.contains(KeyModifiers::ALT) && !k.modifiers.contains(KeyModifiers::SHIFT);
+        let n = st.sug.items.len();
+        match k.code {
+            KeyCode::Down if plain => st.selected = (st.selected + 1) % n,
+            KeyCode::Up if plain => st.selected = (st.selected + n - 1) % n,
+            KeyCode::Char('n') if ctrl => st.selected = (st.selected + 1) % n,
+            KeyCode::Char('p') if ctrl => st.selected = (st.selected + n - 1) % n,
+            KeyCode::Tab | KeyCode::Enter if plain => self.accept_suggestion(),
+            KeyCode::Esc => {
+                self.suggest_dismissed = Some(self.buffer.version);
+                self.suggest = None;
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Replace the typed prefix with the highlighted word.
+    pub fn accept_suggestion(&mut self) {
+        let Some(st) = self.suggest.take() else { return };
+        let Some(word) = st.sug.items.get(st.selected).cloned() else { return };
+        self.buffer.break_group();
+        let (start, end) = (st.sug.prefix_start, self.buffer.cursor);
+        self.buffer.replace(start..end, &word);
+        self.buffer.cursor = start + word.chars().count();
+        self.buffer.goal_col = self.buffer.cursor_line_col().1;
+        self.buffer.break_group();
+        self.suggest_dismissed = Some(self.buffer.version);
     }
 
     fn paste_into_field(&mut self) {
@@ -2068,6 +2171,11 @@ impl App {
     // ------------------------------------------------------------------
 
     pub fn handle_mouse(&mut self, m: MouseEvent) {
+        self.handle_mouse_inner(m);
+        self.refresh_suggestions();
+    }
+
+    fn handle_mouse_inner(&mut self, m: MouseEvent) {
         if !self.cfg.editor.mouse || matches!(self.focus, Focus::Prompt | Focus::Confirm) {
             return;
         }

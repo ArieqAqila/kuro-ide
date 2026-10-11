@@ -12,5 +12,6 @@ pub mod picker;
 pub mod render;
 pub mod snippets;
 pub mod sql;
+pub mod suggest;
 pub mod syntax;
 pub mod table;

@@ -51,6 +51,18 @@ or if a documented default differs from the real one. Headings below are the key
 - Backspace after text removes the whole run of spaces/tabs before the cursor, and Delete removes the whole run after it, in one keypress (Backspace in leading indentation always removes one indent step instead). `false` deletes one character at a time.
 - **Example:** `smart_whitespace_delete = false`
 
+### `editor.word_suggestions`
+- **Type:** boolean
+- **Default:** `true`
+- While typing in Insert mode (or in modeless mode) a popup suggests words already in the file, case-insensitively: words that start with what you typed first, then words that contain it, nearer ones first. Up/Down or Ctrl+N / Ctrl+P move, Tab or Enter accepts (replacing the typed prefix), Esc dismisses.
+- **Example:** `word_suggestions = false`
+
+### `editor.suggest_min_chars`
+- **Type:** integer ≥ 1
+- **Default:** `2`
+- How many characters of a word must be typed before suggestions appear.
+- **Example:** `suggest_min_chars = 3`
+
 ### `editor.line_numbers`
 - **Type:** boolean
 - **Default:** `true`

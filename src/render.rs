@@ -89,6 +89,9 @@ impl App {
         if let Some(p) = l.pane {
             self.render_pane(buf, p);
         }
+        if self.focus == Focus::Editor {
+            self.render_suggestions(buf, &l);
+        }
         self.render_status(buf, l.status);
         let pc = self.render_cmd(buf, l.cmd);
         let picker_cursor = match &self.picker {
@@ -208,6 +211,39 @@ impl App {
             Some((t.x + l.gutter_w + (cx - left) as u16, t.y + (cl - top) as u16))
         } else {
             None
+        }
+    }
+
+    /// The word-suggestion popup, anchored under the word being typed (above it when there is no room).
+    fn render_suggestions(&self, buf: &mut Cells, l: &Layout) {
+        let Some(st) = &self.suggest else { return };
+        let t = l.text;
+        let tab = self.cfg.editor.tab_width;
+        let (cl, cc) = self.buffer.cursor_line_col();
+        if cl < self.top_line || cl >= self.top_line + t.height as usize {
+            return;
+        }
+        let prefix_chars = st.sug.prefix.chars().count();
+        let line = self.buffer.line(cl);
+        let px = cell_x(&line, cc.saturating_sub(prefix_chars), tab).saturating_sub(self.left_col);
+        let y = t.y + (cl - self.top_line) as u16;
+        let widest = st.sug.items.iter().map(|w| table::display_width(w)).max().unwrap_or(1);
+        let w = (widest as u16 + 4).min(40).min(t.width);
+        let h = st.sug.items.len() as u16 + 2;
+        let x = (t.x + l.gutter_w + px as u16).min(t.right().saturating_sub(w));
+        let below = y + 1;
+        let top = if below + h <= t.bottom() || y < t.y + h { below } else { y - h };
+        let rect = Rect::new(x, top, w, h.min(t.bottom().saturating_sub(top)));
+        if rect.height < 3 || rect.width < 6 {
+            return;
+        }
+        use ratatui::widgets::{Block, BorderType, Clear, Widget};
+        Clear.render(rect, buf);
+        Block::bordered().border_type(BorderType::Rounded).render(rect, buf);
+        for (i, word) in st.sug.items.iter().enumerate().take(rect.height as usize - 2) {
+            let style = if i == st.selected { Style::default().add_modifier(Modifier::REVERSED) } else { Style::default() };
+            let inner = rect.width as usize - 2;
+            buf.set_stringn(rect.x + 1, rect.y + 1 + i as u16, format!(" {word:<w$}", w = inner - 1), inner, style);
         }
     }
 

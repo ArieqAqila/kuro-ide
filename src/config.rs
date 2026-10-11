@@ -23,6 +23,10 @@ pub struct EditorConfig {
     pub indent_size: usize,
     /// Backspace/Delete remove a whole run of whitespace in one keypress.
     pub smart_whitespace_delete: bool,
+    /// Suggest words already in the file while typing.
+    pub word_suggestions: bool,
+    /// Characters typed before suggestions appear.
+    pub suggest_min_chars: usize,
     pub line_numbers: bool,
     pub relative_numbers: bool,
     pub mouse: bool,
@@ -38,6 +42,8 @@ impl Default for EditorConfig {
             indent_style: "tabs".into(),
             indent_size: 8,
             smart_whitespace_delete: true,
+            word_suggestions: true,
+            suggest_min_chars: 2,
             line_numbers: true,
             relative_numbers: false,
             mouse: true,
@@ -290,6 +296,7 @@ impl Config {
         }
         at_least_one!(editor.tab_width);
         at_least_one!(editor.indent_size);
+        at_least_one!(editor.suggest_min_chars);
         at_least_one!(editor.scroll_lines);
         at_least_one!(sql.table_max_width);
         at_least_one!(sql.table_max_rows);
