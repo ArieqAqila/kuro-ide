@@ -1,7 +1,12 @@
 //! Test helpers: throwaway Docker databases bound to 127.0.0.1 only.
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
-use kuro::sql::{self, profile::*, DbError, QueryReport, Session};
+pub mod pty;
+pub mod sqlview;
+pub mod ui;
+
+use kuro::sql::{self, DbError, QueryReport, Session, profile::*};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 

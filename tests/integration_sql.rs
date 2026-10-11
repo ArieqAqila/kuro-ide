@@ -3,7 +3,7 @@
 
 mod common;
 use common::*;
-use kuro::sql::{profile::Engine, ErrorCategory::*};
+use kuro::sql::{ErrorCategory::*, profile::Engine};
 use std::time::Duration;
 
 #[test]
@@ -18,7 +18,10 @@ fn postgres() {
 
     // connect + run a query with typed columns
     let rs = run(&mut s, "SELECT 1 AS n, 'x'::text AS t, NULL::int AS z").result.unwrap();
-    assert_eq!(rs.columns.iter().map(|c| (c.name.as_str(), c.type_name.as_str())).collect::<Vec<_>>(), [("n", "int4"), ("t", "text"), ("z", "int4")]);
+    assert_eq!(
+        rs.columns.iter().map(|c| (c.name.as_str(), c.type_name.as_str())).collect::<Vec<_>>(),
+        [("n", "int4"), ("t", "text"), ("z", "int4")]
+    );
     assert_eq!(rs.rows, vec![vec!["1", "x", "NULL"]]);
 
     // zero rows still carries headers
