@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a28dd8fa8a6b651ae82b9f9339a2cc9327dbb5b797489644d6e3eb527b41fbb2 # shrinks to nodes = 3, seed = 18271976385, before = [Insert { who: 0, at: 0 }, Insert { who: 0, at: 0 }, Insert { who: 0, at: 0 }, Delete { who: 0, at: 0, n: 1 }, Insert { who: 0, at: 0 }, Insert { who: 1, at: 9 }], after = [Steps(7), Steps(6), Insert { who: 1, at: 22 }]
+cc 348c5a883ec727e4bdc22cf7428e7580bf90addfaa26e1a42ca324489b573dbe # shrinks to seed = 3601957149418190548, acts = [Delete { who: 0, at: 2, n: 1 }, Delete { who: 0, at: 2, n: 1 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Delete { who: 0, at: 2, n: 1 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Insert { who: 1, at: 0 }, Delete { who: 0, at: 0, n: 1 }, Delete { who: 0, at: 0, n: 1 }, Steps(3), Insert { who: 0, at: 0 }, Insert { who: 0, at: 0 }, Insert { who: 0, at: 0 }, Insert { who: 0, at: 0 }], kill_points = [19, 3]

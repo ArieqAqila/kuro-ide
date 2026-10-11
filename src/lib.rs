@@ -17,5 +17,6 @@ pub mod secret;
 pub mod snippets;
 pub mod sql;
 pub mod suggest;
+pub mod sync;
 pub mod syntax;
 pub mod table;
