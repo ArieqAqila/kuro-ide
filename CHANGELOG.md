@@ -11,6 +11,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- Lua syntax highlighting and `:setlang lua` (`.lua`, `.rockspec`, `#!…lua` files; `--` and `--[[ ]]` comments).
 - **Live sync** between terminals that have the same file open (like VS Code tabs): unsaved edits appear everywhere,
   undo/redo and save are shared, the cursor and scroll position stay on the same text, and nothing is lost when a kuro
   process is killed (leader hand-over, recovery window, journal). New `[sync]` options `enabled` and `max_file_mib`

@@ -108,7 +108,7 @@ fn setlang_without_argument_opens_a_picker_that_filters_and_selects() {
     cmd(&mut app, "setlang");
     assert_eq!(app.focus, Focus::Picker);
     let s = screen(&mut app).join("\n");
-    for l in ["Auto-detect", "Plain Text", "SQL", "Go", "Python", "Shell", "JSON"] {
+    for l in ["Auto-detect", "Plain Text", "SQL", "Go", "Python", "Shell", "JSON", "Lua"] {
         assert!(s.contains(l), "{l} missing from picker:\n{s}");
     }
     typed(&mut app, "pyth");

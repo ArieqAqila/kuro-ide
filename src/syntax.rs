@@ -403,7 +403,64 @@ pub static JSON: LangSpec = LangSpec {
     ..BASE
 };
 
-pub static LANGS: &[&LangSpec] = &[&SQL, &GO, &PYTHON, &SHELL, &JSON];
+pub static LUA: LangSpec = LangSpec {
+    name: "Lua",
+    extensions: &["lua", "rockspec"],
+    filenames: &[".luacheckrc"],
+    shebangs: &["lua", "luajit"],
+    keywords: &[
+        "and", "break", "do", "else", "elseif", "end", "for", "function", "goto", "if", "in", "local", "not", "or", "repeat", "return",
+        "then", "until", "while",
+    ],
+    builtins: &[
+        "print",
+        "pairs",
+        "ipairs",
+        "type",
+        "tostring",
+        "tonumber",
+        "require",
+        "pcall",
+        "xpcall",
+        "error",
+        "assert",
+        "select",
+        "next",
+        "setmetatable",
+        "getmetatable",
+        "rawget",
+        "rawset",
+        "rawequal",
+        "rawlen",
+        "unpack",
+        "load",
+        "dofile",
+        "loadfile",
+        "string",
+        "table",
+        "math",
+        "io",
+        "os",
+        "coroutine",
+        "debug",
+        "utf8",
+        "self",
+        "_G",
+        "_ENV",
+    ],
+    literals: &["nil", "true", "false"],
+    line_comments: &["--"],
+    block_comment: Some(("--[[", "]]")),
+    string_quotes: &['"', '\''],
+    operators: &[
+        "...", "==", "~=", "<=", ">=", "..", "//", "<<", ">>", "::", "+", "-", "*", "/", "%", "^", "#", "&", "~", "|", "<", ">", "=",
+    ],
+    brackets: true,
+    bracket_errors: true,
+    ..BASE
+};
+
+pub static LANGS: &[&LangSpec] = &[&SQL, &GO, &PYTHON, &SHELL, &JSON, &LUA];
 
 /// Every selectable mode: Plain Text first, then the languages.
 pub fn all_modes() -> Vec<&'static LangSpec> {
@@ -418,6 +475,7 @@ pub fn by_name(name: &str) -> Option<&'static LangSpec> {
         "sh" | "bash" | "zsh" | "fish" | "ksh" => "shell",
         "golang" => "go",
         "py" | "python3" => "python",
+        "luajit" => "lua",
         "postgres" | "postgresql" | "mysql" | "mariadb" => "sql",
         other => other,
     };
@@ -576,7 +634,9 @@ fn highlight_line(
         let c = chars[i];
 
         // comments
-        if let Some(lc) = spec.line_comments.iter().find(|lc| starts_with_at(chars, i, lc)) {
+        // a block opener that begins with the line-comment marker (Lua's `--[[`) is a block comment
+        let block_here = spec.block_comment.is_some_and(|(open, _)| starts_with_at(chars, i, open));
+        if let Some(lc) = spec.line_comments.iter().find(|lc| !block_here && starts_with_at(chars, i, lc)) {
             let word_start = i == 0 || chars[i - 1].is_whitespace() || chars[i - 1] == ';';
             if !(spec.shell_vars && *lc == "#" && !word_start) {
                 fill(kinds, i, n, Kind::Comment);
@@ -784,7 +844,7 @@ mod tests {
         let mut names: Vec<_> = LANGS.iter().map(|l| l.name).collect();
         names.sort();
         names.dedup();
-        assert_eq!(names, vec!["Go", "JSON", "Python", "SQL", "Shell"]);
+        assert_eq!(names, vec!["Go", "JSON", "Lua", "Python", "SQL", "Shell"]);
     }
 
     #[test]
@@ -859,6 +919,21 @@ mod tests {
     fn shell_hash_inside_word_is_not_a_comment() {
         let src = "echo a#b";
         assert_eq!(kind_of(&SHELL, src, 0, "#b"), Kind::Plain);
+    }
+
+    #[test]
+    fn lua_comments_keywords_literals_and_operators() {
+        let src = "local x = nil ~= y .. \"s\" -- note\n--[[ block\nstill ]] print(#t)";
+        assert_eq!(detect(Some(Path::new("init.lua")), "").name, "Lua");
+        assert_eq!(detect(None, "#!/usr/bin/env lua").name, "Lua");
+        assert_eq!(kind_of(&LUA, src, 0, "local"), Kind::Keyword);
+        assert_eq!(kind_of(&LUA, src, 0, "nil"), Kind::Literal);
+        assert_eq!(kind_of(&LUA, src, 0, "~="), Kind::Operator);
+        assert_eq!(kind_of(&LUA, src, 0, "\"s\""), Kind::String);
+        assert_eq!(kind_of(&LUA, src, 0, "-- note"), Kind::Comment);
+        assert_eq!(kind_of(&LUA, src, 1, "--[[ block"), Kind::Comment);
+        assert_eq!(kind_of(&LUA, src, 2, "still ]]"), Kind::Comment, "block comments span lines");
+        assert_eq!(kind_of(&LUA, src, 2, "print"), Kind::Builtin);
     }
 
     #[test]
