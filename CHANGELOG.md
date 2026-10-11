@@ -46,6 +46,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Property and fuzz tests (`tests/prop.rs`); the long run found and fixed a table-alignment bug for emoji with
   variation selectors (widths are now measured per grapheme).
 
+- SQL `NULL` cells are drawn dim and italic (no background), distinct from the text `NULL`.
+- Warnings that do not fail a statement (MariaDB `SHOW WARNINGS`, PostgreSQL notices) show in the status line and
+  via `:sql warnings`; they are never reported as errors. Driver `before_statement`/`after_statement` hooks keep the
+  extra round trips out of the measured query time.
+
 ### Removed
 - **F5** no longer runs a query (use Ctrl+Enter, its fallback key, or `:run`). F6 (run buffer) and F7 (cancel) remain.
 

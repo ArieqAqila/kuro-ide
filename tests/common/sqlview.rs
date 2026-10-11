@@ -9,7 +9,7 @@ use std::time::Duration;
 pub fn rows_result(nrows: usize, ncols: usize) -> ResultSet {
     let columns: Vec<Column> = (0..ncols).map(|c| Column { name: format!("col{c}"), type_name: "text".into() }).collect();
     let rows: Vec<Vec<String>> = (0..nrows).map(|r| (0..ncols).map(|c| format!("r{r}c{c}-{}", "x".repeat(c * 3))).collect()).collect();
-    ResultSet { columns, rows, truncated: false, total_rows: nrows, affected: None }
+    ResultSet { columns, rows, truncated: false, total_rows: nrows, affected: None, ..Default::default() }
 }
 
 pub fn show(app: &mut App, rs: ResultSet) {

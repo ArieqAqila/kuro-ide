@@ -24,11 +24,12 @@ postgres|42703|execution|column "nope" does not exist
 postgres|42P01|execution|relation "no_such_table" does not exist
 postgres|57014|execution|canceling statement due to user request
 postgres||execution|connection lost: connection closed
+postgres|57014|execution|canceling statement due to statement timeout
+mariadb|1969|execution|Query execution was interrupted (max_statement_time exceeded)
 # hand-written entries for conditions that are awkward to provoke in CI
 postgres|08006|execution|connection failure
 postgres|42883|runtime|operator does not exist: integer = text
 postgres|42804|runtime|column "n" is of type integer but expression is of type text
 mariadb|1205|execution|Lock wait timeout exceeded; try restarting transaction
 mariadb|2006|execution|MySQL server has gone away
-mariadb|1969|execution|Query execution was interrupted (max_statement_time exceeded)
 mariadb|1267|runtime|Illegal mix of collations (utf8mb4_general_ci,IMPLICIT) and (latin1_swedish_ci,IMPLICIT) for operation '='

@@ -86,6 +86,24 @@ fn postgres() {
     assert_eq!((e.category, e.code.as_deref()), (Execution, Some("57014")), "{e}");
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
 
+    // NULL is tracked separately from the text 'NULL'
+    let rs = run(&mut s, "SELECT NULL::int AS a, 'NULL' AS b").result.unwrap();
+    assert_eq!(rs.nulls.iter().copied().collect::<Vec<_>>(), vec![(0, 0)]);
+    assert_eq!(rs.rows[0], vec!["NULL", "NULL"]);
+
+    // a NOTICE does not fail the statement: it comes back as a warning
+    let r = run(&mut s, "DO $$ BEGIN RAISE NOTICE 'hello notice'; END $$");
+    let rs = r.result.expect("notices are not errors");
+    assert!(rs.warnings.iter().any(|w| w.contains("hello notice")), "{:?}", rs.warnings);
+    assert!(run(&mut s, "SELECT 1").result.unwrap().warnings.is_empty(), "warnings do not leak into the next statement");
+
+    // a server-side timeout is an execution error
+    run(&mut s, "SET statement_timeout = 300").result.unwrap();
+    let e = err("postgres", run(&mut s, "SELECT pg_sleep(5)"));
+    assert_eq!((e.category, e.code.as_deref()), (Execution, Some("57014")), "{e}");
+    assert!(e.message.contains("timeout"), "{e}");
+    run(&mut s, "SET statement_timeout = 0").result.unwrap();
+
     check_snippets(&mut s, Engine::Postgres);
 
     // connection lost
@@ -164,6 +182,22 @@ fn mariadb() {
         assert_eq!(e.category, Execution);
     }
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
+
+    let rs = run(&mut s, "SELECT NULL AS a, 'NULL' AS b").result.unwrap();
+    assert_eq!(rs.nulls.iter().copied().collect::<Vec<_>>(), vec![(0, 0)]);
+    assert_eq!(rs.rows[0], vec!["NULL", "NULL"]);
+
+    // MariaDB turns 1/0 into NULL plus a warning: the statement succeeds
+    let rs = run(&mut s, "SELECT 1/0 AS x").result.expect("a warning is not an error");
+    assert!(rs.nulls.contains(&(0, 0)));
+    assert!(rs.warnings.iter().any(|w| w.contains("Division by 0")), "{:?}", rs.warnings);
+    assert!(run(&mut s, "SELECT 1").result.unwrap().warnings.is_empty());
+
+    // a server-side timeout is an execution error
+    run(&mut s, "SET SESSION max_statement_time = 0.3").result.unwrap();
+    let e = err("mariadb", run(&mut s, "SELECT SLEEP(5)"));
+    assert_eq!(e.category, Execution, "{e}");
+    run(&mut s, "SET SESSION max_statement_time = 0").result.unwrap();
 
     check_snippets(&mut s, Engine::MariaDb);
 

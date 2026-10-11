@@ -23,6 +23,10 @@ pub struct ResultSet {
     pub total_rows: usize,
     /// For statements that return no rows (INSERT, DDL...).
     pub affected: Option<u64>,
+    /// `(row, column)` of every SQL NULL among `rows` (the cell text is `NULL`, so a real string 'NULL' is not confused with it).
+    pub nulls: std::collections::BTreeSet<(usize, usize)>,
+    /// Warnings / notices the server attached to a statement that still succeeded. These are not errors.
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +72,10 @@ pub type Canceller = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 pub trait Driver: Send {
     fn execute(&mut self, sql: &str, row_limit: usize) -> Result<ResultSet, DbError>;
+    /// Runs just before `execute`, outside the timed region (e.g. clear stale server diagnostics).
+    fn before_statement(&mut self, _sql: &str) {}
+    /// Runs just after a successful `execute`, outside the timed region (e.g. fetch warnings).
+    fn after_statement(&mut self, _sql: &str, _rs: &mut ResultSet) {}
     fn canceller(&self) -> Canceller;
     fn label(&self) -> String;
     fn engine(&self) -> Engine;
@@ -109,10 +117,15 @@ impl Session {
         let engine = driver.engine();
         std::thread::spawn(move || {
             while let Ok(Cmd::Run(sql, limit)) = cmd_rx.recv() {
+                driver.before_statement(&sql);
                 let t = Instant::now();
-                let result = driver.execute(&sql, limit);
-                // elapsed is measured around the database call only
-                if rep_tx.send(QueryReport { elapsed: t.elapsed(), result }).is_err() {
+                let mut result = driver.execute(&sql, limit);
+                // elapsed is measured around the database call only: the hooks before and after are not counted
+                let elapsed = t.elapsed();
+                if let Ok(rs) = &mut result {
+                    driver.after_statement(&sql, rs);
+                }
+                if rep_tx.send(QueryReport { elapsed, result }).is_err() {
                     break;
                 }
             }
@@ -182,20 +195,34 @@ pub fn format_duration(d: Duration) -> String {
     }
 }
 
+/// ` · ⚠ 2 warnings` (or the message itself when there is exactly one); empty without warnings.
+fn warning_suffix(rs: &ResultSet) -> String {
+    match rs.warnings.as_slice() {
+        [] => String::new(),
+        [one] => format!(" · ⚠ {one}"),
+        many => format!(" · ⚠ {} warnings (:sql warnings)", many.len()),
+    }
+}
+
 /// The status line shown under the result table.
 pub fn status_text(r: &QueryReport) -> String {
     let t = format_duration(r.elapsed);
     match &r.result {
-        Ok(rs) if rs.columns.is_empty() => match rs.affected {
-            Some(n) => format!("OK · {n} row{} affected · {t}", if n == 1 { "" } else { "s" }),
-            None => format!("OK · {t}"),
-        },
+        Ok(rs) if rs.columns.is_empty() => {
+            let mut s = match rs.affected {
+                Some(n) => format!("OK · {n} row{} affected · {t}", if n == 1 { "" } else { "s" }),
+                None => format!("OK · {t}"),
+            };
+            s.push_str(&warning_suffix(rs));
+            s
+        }
         Ok(rs) => {
             let n = rs.total_rows;
             let mut s = format!("{n} row{} · {t}", if n == 1 { "" } else { "s" });
             if rs.truncated {
                 s.push_str(&format!(" · showing first {} (row_limit)", rs.rows.len()));
             }
+            s.push_str(&warning_suffix(rs));
             s
         }
         Err(e) => {
@@ -229,7 +256,7 @@ mod tests {
                 rows: vec![vec!["1".into()]; rows.min(3)],
                 truncated,
                 total_rows: rows,
-                affected: None,
+                ..Default::default()
             }),
         }
     }
@@ -250,6 +277,23 @@ mod tests {
             result: Err(DbError { category: ErrorCategory::Syntax, message: "boom".into(), line: Some(2), column: Some(5), code: None }),
         };
         assert_eq!(status_text(&e), "✖ syntax error · 2.0 ms · line 2, col 5");
+    }
+
+    #[test]
+    fn warnings_appear_in_the_status_line_but_do_not_make_it_an_error() {
+        let rs = ResultSet {
+            columns: vec![Column { name: "a".into(), type_name: "int".into() }],
+            rows: vec![vec!["1".into()]],
+            total_rows: 1,
+            warnings: vec!["Note 1265: Data truncated".into()],
+            ..Default::default()
+        };
+        let r = QueryReport { elapsed: Duration::from_millis(5), result: Ok(rs.clone()) };
+        assert_eq!(status_text(&r), "1 row · 5.0 ms · ⚠ Note 1265: Data truncated");
+        let two = ResultSet { warnings: vec!["a".into(), "b".into()], ..rs };
+        let r = QueryReport { elapsed: Duration::from_millis(5), result: Ok(two) };
+        assert!(status_text(&r).contains("⚠ 2 warnings"), "{}", status_text(&r));
+        assert!(!status_text(&r).contains("error"));
     }
 
     #[test]

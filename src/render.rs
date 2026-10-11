@@ -351,6 +351,22 @@ impl App {
                 for (i, line) in r.rows.iter().enumerate() {
                     buf.set_stringn(p.x, p.y + 2 + i as u16, line, w, Style::default());
                 }
+                // SQL NULLs are drawn dim and italic (no background): distinct from the text 'NULL'
+                let widths_for_nulls = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+                let spans = table::col_spans(&widths_for_nulls);
+                for (i, row_idx) in (r.row_off..r.row_off + r.rows.len()).enumerate() {
+                    for (&(nr, nc), _) in rs.nulls.range((row_idx, 0)..=(row_idx, usize::MAX)).map(|k| (k, ())) {
+                        debug_assert_eq!(nr, row_idx);
+                        let Some(&(s, e)) = spans.get(nc) else { continue };
+                        let (s, e) = (s.max(r.col_off), e.min(r.col_off + r.visible_w));
+                        if e > s {
+                            buf.set_style(
+                                Rect::new(p.x + (s - r.col_off) as u16, p.y + 2 + i as u16, (e - s) as u16, 1),
+                                Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC),
+                            );
+                        }
+                    }
+                }
                 // current column marker (reverse video on its header cell)
                 if focused {
                     let widths = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);

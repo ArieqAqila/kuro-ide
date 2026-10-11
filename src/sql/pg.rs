@@ -4,12 +4,14 @@ use super::{Canceller, DbError, Driver, ResultSet};
 use crate::table::Column;
 use postgres::error::ErrorPosition;
 use postgres::{Client, Config, NoTls, SimpleQueryMessage};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub struct PgDriver {
     client: Client,
     label: String,
+    /// NOTICE / WARNING messages collected since the last statement.
+    notices: Arc<Mutex<Vec<String>>>,
 }
 
 /// True when `sql` holds exactly one statement (ignores `;` in quotes/comments).
@@ -89,9 +91,12 @@ impl PgDriver {
             cfg.dbname(d);
         }
         cfg.connect_timeout(Duration::from_secs(10)).application_name("kuro");
+        let notices: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = notices.clone();
+        cfg.notice_callback(move |n| sink.lock().unwrap().push(format!("{}: {}", n.severity(), n.message())));
         let client = cfg.connect(NoTls).map_err(|e| pg_error(&e, ""))?;
         let label = format!("postgres://{}@{}:{}/{}", r.user, r.host, r.port, r.database.clone().unwrap_or_default());
-        Ok(PgDriver { client, label })
+        Ok(PgDriver { client, label, notices })
     }
 }
 
@@ -106,6 +111,7 @@ impl Driver for PgDriver {
             None
         };
 
+        self.notices.lock().unwrap().clear();
         let msgs = self.client.simple_query(sql).map_err(|e| pg_error(&e, sql))?;
 
         let mut result: Option<ResultSet> = None;
@@ -118,6 +124,12 @@ impl Driver for PgDriver {
                     }
                     cur.total_rows += 1;
                     if cur.rows.len() < row_limit {
+                        let r = cur.rows.len();
+                        for i in 0..row.len() {
+                            if row.get(i).is_none() {
+                                cur.nulls.insert((r, i));
+                            }
+                        }
                         cur.rows.push((0..row.len()).map(|i| row.get(i).unwrap_or("NULL").to_string()).collect());
                     } else {
                         cur.truncated = true;
@@ -138,6 +150,7 @@ impl Driver for PgDriver {
             }
         }
         let mut rs = result.unwrap_or_default();
+        rs.warnings = std::mem::take(&mut *self.notices.lock().unwrap());
         if let Some(types) = typed {
             if rs.columns.is_empty() && !types.is_empty() {
                 // zero-row SELECT: still show headers

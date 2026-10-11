@@ -471,3 +471,100 @@ fn result_view_tab_shows_results_full_screen_and_esc_returns_to_the_editor() {
     assert_eq!(app.focus, Focus::Table);
     assert!(screen(&mut app)[0].contains("col0"));
 }
+
+// ---------------------------------------------------------------- NULL, warnings, many columns
+
+#[test]
+fn sql_null_is_visibly_distinct_from_the_text_null_without_any_background() {
+    use ratatui::style::Modifier;
+    let (mut app, _) = app_with("x");
+    let mut rs = ResultSet {
+        columns: vec![Column { name: "a".into(), type_name: "text".into() }, Column { name: "b".into(), type_name: "text".into() }],
+        rows: vec![vec!["NULL".into(), "NULL".into()], vec!["x".into(), "NULL".into()]],
+        total_rows: 2,
+        ..Default::default()
+    };
+    rs.nulls.insert((0, 1)); // only the second cell of row 0 is a real NULL; the first is the string 'NULL'
+    rs.nulls.insert((1, 1));
+    show(&mut app, rs);
+    let buf = render(&mut app);
+    let s = rows(&buf);
+    let h = header_row_of(&s, "a text");
+    let y = (h + 2) as u16;
+    let text_null = buf[(0, y)].modifier;
+    let real_null = buf[(buf_col_of(&s[y as usize], 2), y)].modifier;
+    assert!(real_null.contains(Modifier::DIM) && real_null.contains(Modifier::ITALIC), "NULL is dim italic");
+    assert!(!text_null.contains(Modifier::ITALIC), "the string 'NULL' is ordinary text");
+    assert!(buf.content.iter().all(|c| c.bg == ratatui::style::Color::Reset), "no background colour anywhere");
+    assert!(s[y as usize].contains("NULL"), "and the word NULL is still shown");
+}
+
+fn header_row_of(s: &[String], needle: &str) -> usize {
+    s.iter().position(|r| r.contains(needle)).expect("header")
+}
+
+/// Cell index of the second column's first char in a rendered row (after the " │ " separator).
+fn buf_col_of(row: &str, _which: usize) -> u16 {
+    row.chars().position(|c| c == '│').unwrap() as u16 + 2
+}
+
+#[test]
+fn warnings_show_in_the_status_line_and_through_colon_sql_warnings() {
+    let (mut app, _) = app_with("x");
+    let mut rs = rows_result(1, 1);
+    rs.warnings = vec!["Warning 1365: Division by 0".into()];
+    show(&mut app, rs);
+    let s = screen(&mut app).join("\n");
+    assert!(s.contains("⚠ Warning 1365: Division by 0"), "{s}");
+    assert!(!s.contains("error"), "a warning is not an error");
+    press(&mut app, ":");
+    typed(&mut app, "sql warnings");
+    press(&mut app, "enter");
+    assert!(screen(&mut app)[23].contains("Division by 0"));
+}
+
+#[test]
+fn a_result_without_warnings_says_so() {
+    let (mut app, _) = app_with("x");
+    show_rows(&mut app, 1, 1);
+    press(&mut app, ":");
+    typed(&mut app, "sql warnings");
+    press(&mut app, "enter");
+    assert!(screen(&mut app)[23].contains("no warnings"));
+}
+
+#[test]
+fn very_many_columns_scroll_to_the_last_one_and_back() {
+    let (mut app, _) = app_with("x");
+    show_rows(&mut app, 3, 200);
+    press(&mut app, "f4 end");
+    let s = screen(&mut app);
+    assert!(s.iter().any(|r| r.contains("col199")), "the last column is reachable");
+    assert!(s.iter().any(|r| r.contains("cols 200/200")), "position shown");
+    press(&mut app, "home");
+    assert!(screen(&mut app).iter().any(|r| r.starts_with("col0")));
+    for _ in 0..30 {
+        press(&mut app, "l");
+    }
+    assert!(screen(&mut app).iter().any(|r| r.contains("cols 31/200")));
+}
+
+#[test]
+fn a_single_column_single_row_result() {
+    let (mut app, _) = app_with("x");
+    show(
+        &mut app,
+        ResultSet {
+            columns: vec![Column { name: "only".into(), type_name: "int".into() }],
+            rows: vec![vec!["7".into()]],
+            total_rows: 1,
+            ..Default::default()
+        },
+    );
+    let s = screen(&mut app);
+    assert!(s.iter().any(|r| r.starts_with("only int")));
+    assert!(s.iter().any(|r| r.starts_with('7')));
+    assert!(s.iter().any(|r| r.contains("1 row ·")), "singular");
+    press(&mut app, "f4 l j G");
+    assert!(screen(&mut app).iter().any(|r| r.starts_with('7')), "scrolling a table that fits does not break it");
+}

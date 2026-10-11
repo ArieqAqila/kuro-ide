@@ -1824,11 +1824,20 @@ impl App {
                     self.focus = Focus::Table;
                 }
             }
+            "warnings" => {
+                let w = self.sql.result.as_ref().and_then(|r| r.outcome.as_ref().ok()).map(|rs| rs.warnings.clone()).unwrap_or_default();
+                if w.is_empty() {
+                    self.flash("no warnings on the last result");
+                } else {
+                    self.flash(w.join(" | "));
+                }
+            }
             "profiles" => match profile::load_profiles(&self.cfg.sql.connections_path()) {
                 Ok(p) => self.flash(format!("profiles: {}", p.keys().cloned().collect::<Vec<_>>().join(", "))),
                 Err(e) => self.flash(e),
             },
-            _ => self.flash("usage: :connect NAME | :disconnect | :run | :runline | :runbuffer | :cancel | :sql close|show|profiles"),
+            _ => self
+                .flash("usage: :connect NAME | :disconnect | :run | :runline | :runbuffer | :cancel | :sql close|show|profiles|warnings"),
         }
     }
 

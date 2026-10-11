@@ -24,6 +24,12 @@ pub fn my_error(e: &::mysql::Error, sql: &str) -> DbError {
     }
 }
 
+/// `SHOW WARNINGS` / `SHOW ERRORS` must see the previous statement's diagnostics untouched.
+fn is_diagnostics(sql: &str) -> bool {
+    let l = sql.trim_start().to_ascii_lowercase();
+    l.starts_with("show warnings") || l.starts_with("show errors") || l.starts_with("show count(*)")
+}
+
 fn value_to_string(v: Value) -> String {
     match v {
         Value::NULL => "NULL".into(),
@@ -59,7 +65,7 @@ impl Driver for MyDriver {
     fn execute(&mut self, sql: &str, row_limit: usize) -> Result<ResultSet, DbError> {
         let mut res = self.conn.query_iter(sql).map_err(|e| my_error(&e, sql))?;
         let mut out: Option<ResultSet> = None;
-        while let Some(set) = res.iter() {
+        while let Some(mut set) = res.iter() {
             let columns: Vec<Column> = set
                 .columns()
                 .as_ref()
@@ -71,11 +77,18 @@ impl Driver for MyDriver {
             if cur.columns.is_empty() {
                 cur.affected = Some(affected);
             }
-            for row in set {
+            for row in set.by_ref() {
                 let row = row.map_err(|e| my_error(&e, sql))?;
                 cur.total_rows += 1;
                 if cur.rows.len() < row_limit {
-                    cur.rows.push(row.unwrap().into_iter().map(value_to_string).collect());
+                    let values = row.unwrap();
+                    let r = cur.rows.len();
+                    for (i, v) in values.iter().enumerate() {
+                        if matches!(v, Value::NULL) {
+                            cur.nulls.insert((r, i));
+                        }
+                    }
+                    cur.rows.push(values.into_iter().map(value_to_string).collect());
                 } else {
                     cur.truncated = true;
                 }
@@ -85,7 +98,27 @@ impl Driver for MyDriver {
                 out = Some(cur);
             }
         }
+        drop(res);
         Ok(out.unwrap_or_default())
+    }
+
+    fn before_statement(&mut self, sql: &str) {
+        // MariaDB keeps the warnings of the last statement that *produced* any, and statements that touch no
+        // tables (SELECT 1, SET, COMMIT...) do not clear them. A statement over a derived table does, so run
+        // one to avoid reporting the previous statement's warnings as this one's.
+        if !is_diagnostics(sql) {
+            let _ = self.conn.query_drop("SELECT 1 FROM (SELECT 1) AS kuro_reset");
+        }
+    }
+
+    fn after_statement(&mut self, sql: &str, rs: &mut ResultSet) {
+        if is_diagnostics(sql) {
+            return;
+        }
+        // warnings that did not fail the statement: Level, Code, Message
+        if let Ok(rows) = self.conn.query::<(String, u32, String), _>("SHOW WARNINGS") {
+            rs.warnings = rows.into_iter().map(|(level, code, msg)| format!("{level} {code}: {msg}")).collect();
+        }
     }
 
     fn canceller(&self) -> Canceller {
