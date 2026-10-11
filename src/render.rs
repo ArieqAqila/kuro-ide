@@ -342,7 +342,7 @@ impl App {
         match &rv.outcome {
             Ok(rs) => {
                 let opts = self.table_opts();
-                let r = table::layout(&rs.columns, &rs.rows, &opts, &rv.state, w, body_h);
+                let r = table::layout_cached(&rs.columns, &rs.rows, &rv.natural, &opts, &rv.state, w, body_h);
                 buf.set_stringn(p.x, p.y, &r.header, w, bold());
                 buf.set_stringn(p.x, p.y + 1, &r.separator, w, dim());
                 if rs.columns.is_empty() {
@@ -352,7 +352,7 @@ impl App {
                     buf.set_stringn(p.x, p.y + 2 + i as u16, line, w, Style::default());
                 }
                 // SQL NULLs are drawn dim and italic (no background): distinct from the text 'NULL'
-                let widths_for_nulls = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+                let widths_for_nulls = table::widths_from_natural(&rv.natural, &opts, &rv.state);
                 let spans = table::col_spans(&widths_for_nulls);
                 for (i, row_idx) in (r.row_off..r.row_off + r.rows.len()).enumerate() {
                     for (&(nr, nc), _) in rs.nulls.range((row_idx, 0)..=(row_idx, usize::MAX)).map(|k| (k, ())) {
@@ -369,7 +369,7 @@ impl App {
                 }
                 // current column marker (reverse video on its header cell)
                 if focused {
-                    let widths = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+                    let widths = table::widths_from_natural(&rv.natural, &opts, &rv.state);
                     if let Some(&(s, e)) = table::col_spans(&widths).get(rv.state.cur_col) {
                         let (s, e) = (s.max(r.col_off), e.min(r.col_off + r.visible_w));
                         if e > s {

@@ -3,7 +3,7 @@
 
 use kuro::app::{App, ResultView};
 use kuro::sql::{self, DbError, ErrorCategory, QueryReport, ResultSet};
-use kuro::table::{Column, TableState};
+use kuro::table::Column;
 use std::time::Duration;
 
 pub fn rows_result(nrows: usize, ncols: usize) -> ResultSet {
@@ -15,7 +15,7 @@ pub fn rows_result(nrows: usize, ncols: usize) -> ResultSet {
 pub fn show(app: &mut App, rs: ResultSet) {
     let rep = QueryReport { elapsed: Duration::from_millis(7), result: Ok(rs) };
     let status = sql::status_text(&rep);
-    app.sql.result = Some(ResultView { outcome: rep.result, elapsed: rep.elapsed, status, state: TableState::default() });
+    app.sql.result = Some(ResultView::new(rep.result, rep.elapsed, status));
     app.sql.pane_open = true;
 }
 
@@ -27,6 +27,6 @@ pub fn show_error(app: &mut App, cat: &str, msg: &str, line: Option<usize>, col:
     let e = DbError { category: ErrorCategory::parse(cat).unwrap(), message: msg.into(), line, column: col, code: None };
     let rep = QueryReport { elapsed: Duration::from_millis(3), result: Err(e) };
     let status = sql::status_text(&rep);
-    app.sql.result = Some(ResultView { outcome: rep.result, elapsed: rep.elapsed, status, state: TableState::default() });
+    app.sql.result = Some(ResultView::new(rep.result, rep.elapsed, status));
     app.sql.pane_open = true;
 }

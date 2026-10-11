@@ -55,6 +55,18 @@ pub struct ResultView {
     pub elapsed: Duration,
     pub status: String,
     pub state: TableState,
+    /// Column widths needed to show every cell, computed once (scanning a big result on every key press would be slow).
+    pub natural: Vec<usize>,
+}
+
+impl ResultView {
+    pub fn new(outcome: Result<ResultSet, DbError>, elapsed: Duration, status: String) -> ResultView {
+        let natural = match &outcome {
+            Ok(rs) => table::natural_widths(&rs.columns, &rs.rows),
+            Err(_) => vec![],
+        };
+        ResultView { outcome, elapsed, status, state: TableState::default(), natural }
+    }
 }
 
 #[derive(Default)]
@@ -1979,12 +1991,8 @@ impl App {
                 }
                 Ok(Err(e)) => {
                     self.sql.connecting = None;
-                    self.sql.result = Some(ResultView {
-                        status: format!("✖ could not connect · {}", e.category.label()),
-                        outcome: Err(e),
-                        elapsed: Duration::ZERO,
-                        state: TableState::default(),
-                    });
+                    let status = format!("✖ could not connect · {}", e.category.label());
+                    self.sql.result = Some(ResultView::new(Err(e), Duration::ZERO, status));
                     self.sql.pane_open = true;
                     if self.cfg.sql.result_view == "tab" {
                         self.sql.tab_active = true;
@@ -2006,7 +2014,7 @@ impl App {
                 e.shift(self.sql.origin.0, self.sql.origin.1);
             }
             let status = sql::status_text(&rep);
-            self.sql.result = Some(ResultView { outcome: rep.result, elapsed: rep.elapsed, status, state: TableState::default() });
+            self.sql.result = Some(ResultView::new(rep.result, rep.elapsed, status));
             self.sql.pane_open = true;
             if self.cfg.sql.result_view == "tab" {
                 self.sql.tab_active = true;
@@ -2181,7 +2189,7 @@ impl App {
         let opts = self.table_opts();
         let Some(rv) = &mut self.sql.result else { return };
         let Ok(rs) = &rv.outcome else { return };
-        let widths = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+        let widths = table::widths_from_natural(&rv.natural, &opts, &rv.state);
         let vw = table::visible_width(&opts, vw);
         let vrows = table::visible_row_count(&opts, vh);
         f(&mut rv.state, &widths, vw, vrows, rs.rows.len(), rs.columns.len());
@@ -2255,9 +2263,9 @@ impl App {
         if matches!(k.code, KeyCode::Enter | KeyCode::Char('e') | KeyCode::Char(' ')) {
             let opts = self.table_opts();
             if let (Some((vw, _)), Some(rv)) = (self.table_viewport(), &mut self.sql.result)
-                && let Ok(rs) = &rv.outcome
+                && rv.outcome.is_ok()
             {
-                let widths = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+                let widths = table::widths_from_natural(&rv.natural, &opts, &rv.state);
                 rv.state.reveal_cur_col(&widths, table::visible_width(&opts, vw));
             }
         }
@@ -2454,9 +2462,9 @@ impl App {
                 let double = self.register_click(m.column, m.row) >= 2;
                 let rel_x = (m.column - pane.x) as usize;
                 if let Some(rv) = &mut self.sql.result
-                    && let Ok(rs) = &rv.outcome
+                    && rv.outcome.is_ok()
                 {
-                    let widths = table::column_widths(&rs.columns, &rs.rows, &opts, &rv.state);
+                    let widths = table::widths_from_natural(&rv.natural, &opts, &rv.state);
                     if let Some(c) = table::column_at(&widths, rv.state.col_off, rel_x) {
                         rv.state.cur_col = c;
                         if double && m.row < pane.y + 2 {

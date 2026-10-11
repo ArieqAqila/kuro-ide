@@ -94,6 +94,13 @@ fn postgres() {
     assert_eq!((e.category, e.code.as_deref()), (Execution, Some("57014")), "{e}");
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
 
+    // the reported time is measured around the database call: a 0.3 s sleep takes about that long
+    let r = run(&mut s, "SELECT pg_sleep(0.3)");
+    assert!(r.result.is_ok());
+    assert!(r.elapsed >= Duration::from_millis(280) && r.elapsed < Duration::from_secs(5), "plausible timing: {:?}", r.elapsed);
+    let quick = run(&mut s, "SELECT 1");
+    assert!(quick.elapsed < Duration::from_millis(280), "a trivial query is far faster than the sleep: {:?}", quick.elapsed);
+
     // NULL is tracked separately from the text 'NULL'
     let rs = run(&mut s, "SELECT NULL::int AS a, 'NULL' AS b").result.unwrap();
     assert_eq!(rs.nulls.iter().copied().collect::<Vec<_>>(), vec![(0, 0)]);
@@ -197,6 +204,11 @@ fn mariadb() {
         assert_eq!(e.category, Execution);
     }
     assert!(run(&mut s, "SELECT 1").result.is_ok(), "session usable after cancel");
+
+    let r = run(&mut s, "SELECT SLEEP(0.3)");
+    assert!(r.result.is_ok());
+    assert!(r.elapsed >= Duration::from_millis(280) && r.elapsed < Duration::from_secs(5), "plausible timing: {:?}", r.elapsed);
+    assert!(run(&mut s, "SELECT 1").elapsed < Duration::from_millis(280));
 
     let rs = run(&mut s, "SELECT NULL AS a, 'NULL' AS b").result.unwrap();
     assert_eq!(rs.nulls.iter().copied().collect::<Vec<_>>(), vec![(0, 0)]);

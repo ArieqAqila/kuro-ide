@@ -566,3 +566,29 @@ fn a_single_column_single_row_result() {
     press(&mut app, "f4 l j G");
     assert!(screen(&mut app).iter().any(|r| r.starts_with('7')), "scrolling a table that fits does not break it");
 }
+
+#[test]
+fn a_very_large_result_scrolls_to_the_end_and_back_without_losing_the_header() {
+    let (mut app, _) = app_with("x");
+    show(&mut app, rows_result(50_000, 3));
+    press(&mut app, "f4");
+    let s = screen(&mut app);
+    assert!(s.iter().any(|r| r.contains("50000 rows")), "{}", s.join("\n"));
+    press(&mut app, "G");
+    let s = screen(&mut app);
+    let h = header_row(&s);
+    assert!(s[h].starts_with("col0"), "header pinned at the end");
+    assert!(s.iter().any(|r| r.starts_with("r49999c0")), "the last row is on screen");
+    assert!(s.iter().any(|r| r.contains("/50000")));
+    // page back up a few times: rows stay consecutive
+    press(&mut app, "pageup pageup");
+    let s = screen(&mut app);
+    let first: usize = s[h + 2].split("c0").next().unwrap().trim_start_matches('r').parse().unwrap();
+    let second: usize = s[h + 3].split("c0").next().unwrap().trim_start_matches('r').parse().unwrap();
+    assert_eq!(second, first + 1, "rows are consecutive after paging");
+    press(&mut app, "g");
+    assert!(screen(&mut app)[h + 2].starts_with("r0c0"));
+    // the visible slice is capped no matter how big the data is
+    let visible = screen(&mut app)[h + 2..].iter().take_while(|r| r.starts_with('r')).count();
+    assert!(visible <= 25);
+}

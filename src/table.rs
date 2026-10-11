@@ -125,22 +125,37 @@ pub fn header_label(c: &Column) -> String {
     if c.type_name.is_empty() { sanitize(&c.name) } else { format!("{} {}", sanitize(&c.name), c.type_name) }
 }
 
-pub fn column_widths(cols: &[Column], rows: &[Vec<String>], opts: &TableOpts, st: &TableState) -> Vec<usize> {
+/// Width each column would need to show everything (header and every cell), before any cap.
+/// This scans all rows, so callers with big results compute it once and keep it (see `widths_from_natural`).
+pub fn natural_widths(cols: &[Column], rows: &[Vec<String>]) -> Vec<usize> {
     cols.iter()
         .enumerate()
         .map(|(i, c)| {
-            let natural = rows
-                .iter()
+            rows.iter()
                 .filter_map(|r| r.get(i))
                 .map(|v| display_width(&sanitize(v)))
                 .chain(std::iter::once(display_width(&header_label(c))))
                 .max()
                 .unwrap_or(1)
-                .max(1);
-            let cap = if st.expanded.contains(&i) { opts.max_width } else { opts.column_max_width };
-            natural.min(cap.max(1))
+                .max(1)
         })
         .collect()
+}
+
+/// Apply the width caps (`column_max_width`, or `max_width` for expanded columns) to the natural widths.
+pub fn widths_from_natural(natural: &[usize], opts: &TableOpts, st: &TableState) -> Vec<usize> {
+    natural
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let cap = if st.expanded.contains(&i) { opts.max_width } else { opts.column_max_width };
+            (*n).min(cap.max(1))
+        })
+        .collect()
+}
+
+pub fn column_widths(cols: &[Column], rows: &[Vec<String>], opts: &TableOpts, st: &TableState) -> Vec<usize> {
+    widths_from_natural(&natural_widths(cols, rows), opts, st)
 }
 
 pub fn total_width(widths: &[usize]) -> usize {
@@ -203,7 +218,20 @@ impl TableState {
 
 /// Lay out the visible window of the table.
 pub fn layout(cols: &[Column], rows: &[Vec<String>], opts: &TableOpts, st: &TableState, viewport_w: usize, viewport_h: usize) -> Rendered {
-    let widths = column_widths(cols, rows, opts, st);
+    layout_cached(cols, rows, &natural_widths(cols, rows), opts, st, viewport_w, viewport_h)
+}
+
+/// `layout` with precomputed natural widths (the expensive part for large results).
+pub fn layout_cached(
+    cols: &[Column],
+    rows: &[Vec<String>],
+    natural: &[usize],
+    opts: &TableOpts,
+    st: &TableState,
+    viewport_w: usize,
+    viewport_h: usize,
+) -> Rendered {
+    let widths = widths_from_natural(natural, opts, st);
     let vw = visible_width(opts, viewport_w);
     let vrows = visible_row_count(opts, viewport_h);
     let mut st = st.clone();

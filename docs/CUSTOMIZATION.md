@@ -322,7 +322,8 @@ Highlighting is table-driven (`src/syntax.rs`); there is no per-language code.
 1. Add a `LangSpec` next to the existing ones. Fields: `name` (shown in the status bar), `extensions`,
    `filenames`, `shebangs` (interpreter basenames), `keywords`, `builtins`, `literals`, `line_comments`,
    `block_comment`, `string_quotes`, and flags `triple_quotes` (Python-style), `raw_quote` (Go-style backtick),
-   `case_insensitive`, `shell_vars`, `key_colon` (JSON keys). Start with `..BASE` and set only what differs.
+   `case_insensitive`, `shell_vars`, `key_colon` (JSON keys), `operators` (the operator tokens; the longest match wins),
+   `brackets` (colour `() [] {}` by depth) and `bracket_errors` (flag unmatched ones). Start with `..BASE` and set only what differs.
 2. Append `&YOUR_LANG` to the `LANGS` list.
 3. Add a test in the `tests` module of `src/syntax.rs` (see the existing `kind_of` helper) and update
    `every_language_is_registered_and_named_uniquely`.

@@ -778,3 +778,136 @@ fn regression_gutter_stays_absolute_when_modeless() {
     typed(&mut app, "x");
     assert_eq!(gutter_numbers(&mut app, 10), absolute());
 }
+
+// ---------------------------------------------------------------- gaps from the spec's test list
+
+#[test]
+fn an_empty_query_clears_the_highlights_and_the_count() {
+    let (mut app, _) = modeless("\n\n\n\nfoo x foo");
+    press(&mut app, "ctrl+f");
+    typed(&mut app, "foo");
+    let underlined = |app: &mut kuro::app::App| {
+        let buf = render(app);
+        (0..80u16)
+            .filter(|x| buf[(*x, 4)].modifier.contains(Modifier::UNDERLINED) || buf[(*x, 4)].modifier.contains(Modifier::REVERSED))
+            .count()
+    };
+    assert!(underlined(&mut app) >= 6, "matches are highlighted");
+    for _ in 0..3 {
+        press(&mut app, "backspace");
+    }
+    assert_eq!(underlined(&mut app), 0, "nothing highlighted for an empty query");
+    let s = screen(&mut app).join("\n");
+    assert!(!s.contains("of 2") && !s.contains("No results"), "no count for an empty query:\n{s}");
+    assert!(app.find.matches.is_empty());
+}
+
+#[test]
+fn overlapping_candidates_are_counted_once_like_vscode() {
+    let (mut app, _) = modeless("aaaa aa");
+    press(&mut app, "ctrl+f");
+    typed(&mut app, "aa");
+    assert_eq!(app.find.matches.len(), 3, "\"aaaa\" holds two non-overlapping \"aa\", plus the one in \"aa\"");
+    assert!(screen(&mut app).join("\n").contains("1 of 3"));
+}
+
+#[test]
+fn match_count_is_right_across_lines_and_unicode() {
+    let (mut app, _) = modeless("é€ foo\nfoo 日本 foo\n😀foo");
+    press(&mut app, "ctrl+f");
+    typed(&mut app, "foo");
+    assert_eq!(app.find.matches.len(), 4);
+    assert!(screen(&mut app).join("\n").contains("1 of 4"));
+}
+
+#[test]
+fn a_multi_line_paste_is_one_undo_step_and_redoable() {
+    let (mut app, clip) = modeless("start");
+    app.buffer.cursor = 5;
+    *clip.0.lock().unwrap() = "one\ntwo\nthree".into();
+    press(&mut app, "ctrl+v");
+    assert_eq!(text_of(&app), "startone\ntwo\nthree");
+    assert_eq!(app.buffer.line_count(), 3);
+    press(&mut app, "ctrl+z");
+    assert_eq!(text_of(&app), "start", "the whole paste is undone at once");
+    press(&mut app, "ctrl+y");
+    assert_eq!(text_of(&app), "startone\ntwo\nthree");
+    press(&mut app, "ctrl+z");
+    typed(&mut app, "!");
+    press(&mut app, "ctrl+y");
+    assert_eq!(text_of(&app), "start!", "a new edit clears the redo history");
+}
+
+#[test]
+fn deleting_a_multi_line_selection_undoes_in_one_step() {
+    let (mut app, _) = modeless("a\nb\nc\nd");
+    app.buffer.anchor = Some(1);
+    app.buffer.cursor = 5;
+    press(&mut app, "delete");
+    // characters 1..5 are "\nb\nc"; what remains is "a" followed by "\nd"
+    assert_eq!(text_of(&app), "a\nd");
+    press(&mut app, "ctrl+z");
+    assert_eq!(text_of(&app), "a\nb\nc\nd");
+}
+
+#[test]
+fn the_cursor_moves_by_character_over_multibyte_and_wide_text() {
+    let (mut app, _) = modeless("é😀日x");
+    let mut cols = vec![];
+    for _ in 0..4 {
+        cols.push(app.buffer.cursor_line_col().1);
+        press(&mut app, "right");
+    }
+    assert_eq!(cols, vec![0, 1, 2, 3], "one step per character, not per byte");
+    press(&mut app, "backspace");
+    assert_eq!(text_of(&app), "é😀日", "backspace removes one whole character");
+    press(&mut app, "left delete");
+    assert_eq!(text_of(&app), "é😀");
+    let gw = gutter_w(&app);
+    let area = ratatui::layout::Rect::new(0, 0, W, H);
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    press(&mut app, "home");
+    press(&mut app, "right right");
+    let cur = app.render(&mut buf, area).unwrap();
+    assert_eq!(cur.0, gw + 1 + 2, "é is 1 cell wide, 😀 is 2");
+}
+
+#[test]
+fn selections_made_backwards_and_across_lines_behave_the_same_as_forwards() {
+    let (mut app, clip) = modeless("one\ntwo\nthree");
+    press(&mut app, "ctrl+end shift+up shift+left shift+left");
+    // from the end of the text: up lands at the end of "two" (column clamped), then two steps left
+    assert_eq!(app.buffer.selected_text().as_deref(), Some("wo\nthree"));
+    assert!(app.buffer.anchor.unwrap() > app.buffer.cursor, "the cursor is before the anchor: a backwards selection");
+    press(&mut app, "ctrl+c");
+    assert_eq!(*clip.0.lock().unwrap(), "wo\nthree");
+    press(&mut app, "backspace");
+    assert_eq!(text_of(&app), "one\nt");
+    assert!(app.buffer.selection().is_none());
+    // the same selection made forwards
+    let (mut b, _) = modeless("one\ntwo\nthree");
+    b.buffer.cursor = 5;
+    press(&mut b, "shift+down shift+down shift+end");
+    assert_eq!(b.buffer.selected_text().as_deref(), Some("wo\nthree"));
+}
+
+#[test]
+fn inserting_and_deleting_at_the_start_middle_end_and_line_boundaries() {
+    let (mut app, _) = modeless("ab\ncd");
+    app.buffer.cursor = 0;
+    typed(&mut app, "X");
+    assert_eq!(text_of(&app), "Xab\ncd", "start");
+    app.buffer.cursor = 2;
+    typed(&mut app, "Y");
+    assert_eq!(text_of(&app), "XaYb\ncd", "middle");
+    app.buffer.cursor = 4; // end of line 1 (just before the line break)
+    typed(&mut app, "Z");
+    assert_eq!(text_of(&app), "XaYbZ\ncd", "end of a line");
+    app.buffer.cursor = 6; // start of line 2
+    press(&mut app, "backspace");
+    assert_eq!(text_of(&app), "XaYbZcd", "joins the lines");
+    app.buffer.cursor = app.buffer.len_chars();
+    typed(&mut app, "!");
+    press(&mut app, "delete");
+    assert_eq!(text_of(&app), "XaYbZcd!", "delete at the very end does nothing");
+}
