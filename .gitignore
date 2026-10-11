@@ -1,0 +1,8 @@
+/target
+# local database connection profiles must never be committed
+connections.toml
+**/connections.toml
+*.local.toml
+.env
+.env.*
+*.swp

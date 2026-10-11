@@ -1,0 +1,31 @@
+# kuro default configuration. Every option is documented in docs/CUSTOMIZATION.md.
+
+[editor]
+modal = true              # vi-style modes; false = always-insert, VS Code feel
+tab_width = 4
+expand_tab = true
+line_numbers = true
+relative_numbers = true   # current line absolute, others relative
+mouse = true
+double_click_ms = 400
+scroll_lines = 3
+
+[clipboard]
+backend = "auto"          # auto | wl-clipboard | xclip | xsel | osc52
+
+[find]
+case_sensitive = false
+whole_word = false
+regex = false
+
+[sql]
+result_view = "split"     # split | tab
+table_max_width = 120
+table_max_rows = 25
+column_max_width = 40
+row_limit = 10000
+connections_file = ""     # empty = <config dir>/connections.toml
+
+[ui]
+syntax_highlight = true
+kitty_keyboard = true
