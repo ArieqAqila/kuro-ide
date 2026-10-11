@@ -67,6 +67,9 @@ impl Pty {
         cmd.env("TERM", "xterm-256color");
         cmd.env("KURO_CONFIG_DIR", dir);
         // never touch the real clipboard from tests
+        // nor the real sync sockets or journals
+        cmd.env("XDG_RUNTIME_DIR", dir.join("run"));
+        cmd.env("XDG_STATE_HOME", dir.join("state"));
         cmd.env_remove("WAYLAND_DISPLAY");
         cmd.env_remove("DISPLAY");
         for (k, v) in env {
@@ -203,6 +206,15 @@ impl Pty {
         let p = self.parser.lock().unwrap();
         let s = p.screen();
         (0..self.rows).any(|r| (0..self.cols).any(|c| s.cell(r, c).is_some_and(|x| x.inverse())))
+    }
+
+    /// Kill the process the way the OS would on a crash: no cleanup of any kind runs.
+    pub fn sigkill(&mut self) {
+        if let Some(pid) = self.child.process_id() {
+            // SAFETY: plain kill(2) on a child process we spawned.
+            unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+        }
+        assert!(self.wait_exit(), "the killed process is gone");
     }
 
     pub fn finished(&mut self) -> bool {
