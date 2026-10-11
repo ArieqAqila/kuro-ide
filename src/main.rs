@@ -5,6 +5,7 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
+use kuro::ansi::SgrFilter;
 use kuro::app::App;
 use kuro::buffer::Buffer;
 use kuro::config::{Config, default_config_path};
@@ -53,7 +54,7 @@ fn parse_args() -> Result<Option<Args>> {
     Ok(Some(a))
 }
 
-type Term = Terminal<CrosstermBackend<Stdout>>;
+type Term = Terminal<CrosstermBackend<SgrFilter<Stdout>>>;
 
 fn setup(kitty: bool) -> Result<Term> {
     enable_raw_mode()?;
@@ -62,7 +63,7 @@ fn setup(kitty: bool) -> Result<Term> {
         // terminals without the kitty keyboard protocol ignore this sequence
         let _ = execute!(stdout(), PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES));
     }
-    Ok(Terminal::new(CrosstermBackend::new(stdout()))?)
+    Ok(Terminal::new(CrosstermBackend::new(SgrFilter::new(stdout())))?)
 }
 
 fn restore(kitty: bool) {

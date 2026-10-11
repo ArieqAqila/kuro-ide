@@ -31,3 +31,17 @@ connections_file = ""     # empty = <config dir>/connections.toml
 [ui]
 syntax_highlight = true
 kitty_keyboard = true
+
+[colors]
+# Roles -> ANSI palette slot: 0-7 normal, 8-15 bright, -1 = default foreground.
+# The real colours come from your terminal theme.
+keyword = 5
+builtin = 4
+literal = 3
+string = 2
+number = 6
+operator = 1
+comment = -1              # -1: dim italic default foreground
+key = 4
+bracket_error = 1         # also shown in reverse video
+bracket_depth = [3, 5, 6, 2, 4]   # cycled by nesting depth

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 pub struct Pty {
     writer: Box<dyn Write + Send>,
     parser: Arc<Mutex<vt100::Parser>>,
+    raw: Arc<Mutex<Vec<u8>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     pub rows: u16,
     pub cols: u16,
@@ -55,18 +56,26 @@ impl Pty {
         let writer = pair.master.take_writer().unwrap();
         let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
         let p2 = parser.clone();
+        let raw = Arc::new(Mutex::new(Vec::new()));
+        let raw2 = raw.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             while let Ok(n) = reader.read(&mut buf) {
                 if n == 0 {
                     break;
                 }
+                raw2.lock().unwrap().extend_from_slice(&buf[..n]);
                 p2.lock().unwrap().process(&buf[..n]);
             }
         });
         // keep the master alive for the lifetime of the child
         std::mem::forget(pair.master);
-        Pty { writer, parser, child, rows, cols }
+        Pty { writer, parser, raw, child, rows, cols }
+    }
+
+    /// Every byte the program has written to the terminal so far.
+    pub fn raw_output(&self) -> Vec<u8> {
+        self.raw.lock().unwrap().clone()
     }
 
     pub fn send(&mut self, s: &str) {

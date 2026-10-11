@@ -144,3 +144,21 @@ fn syntax_colors_are_theme_neutral() {
     pty.assert_default_background();
     pty.assert_ansi_palette_only();
 }
+
+#[test]
+fn raw_terminal_output_has_no_truecolor_256_color_or_background_sequences() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("main.go");
+    std::fs::write(&f, "package main\n\nfunc main() {\n\tx := []int{1, 0x1F, 2.5e-3}\n\tif x[0] == 1 && (len(x) > 2 || false) {\n\t\ts := \"str\" // comment\n\t}\n}\n").unwrap();
+    let mut pty = Pty::spawn(dir.path(), CFG, Some(&f), &[]);
+    pty.wait_for("start", |s| s.iter().any(|r| r.contains("package main")));
+    pty.send(CTRL_A);
+    pty.send(CTRL_F);
+    pty.send("x");
+    pty.wait_for("find bar", |s| s.iter().any(|r| r.contains("Find") || r.contains("of")));
+    let raw = pty.raw_output();
+    let colours = common::colorscan::sgr_lists(&raw);
+    assert!(colours.iter().flatten().any(|p| (30..=37).contains(p)), "syntax colours must be present for the check to mean anything");
+    let v = common::colorscan::violations(&raw);
+    assert!(v.is_empty(), "{v:?}");
+}

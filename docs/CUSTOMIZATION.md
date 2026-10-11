@@ -161,6 +161,86 @@ Initial state of the find-bar toggles (they can still be flipped with Alt+C / Al
 - Ask the terminal for the kitty keyboard protocol so combinations like Ctrl+Shift+Z can be told apart from Ctrl+Z. Terminals without it ignore the request; switch off if your terminal misbehaves.
 - **Example:** `kitty_keyboard = false`
 
+## `[colors]`
+
+kuro never emits RGB, 256-colour or background colours. Every text colour is a **role** mapped to one of the
+terminal's 16 ANSI palette slots, so the terminal theme decides what it looks like (a light and a dark theme
+get different actual colours from the same config). Emphasis (selection, current match, focused column,
+mismatched brackets) uses reverse video, bold, dim or underline, never a background colour.
+
+To map a role to a different slot, set it to a number: `0-7` are black, red, green, yellow, blue, magenta,
+cyan, white; `8-15` are the bright versions; `-1` means "the terminal's default foreground".
+
+```toml
+[colors]
+keyword = 12              # bright blue keywords
+string = 10               # bright green strings
+bracket_depth = [9, 11, 10, 14, 12, 13]
+```
+
+Out-of-range values produce a warning and use the default. `tests/color_rule.rs` fails the build if any
+rendered screen contains a truecolor, 256-colour or background-colour escape sequence.
+
+### `colors.keyword`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `5`
+- Language keywords (`func`, `SELECT`, `if`, …).
+- **Example:** `keyword = 12`
+
+### `colors.builtin`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `4`
+- Built-in functions and types, and shell variables.
+- **Example:** `builtin = 14`
+
+### `colors.literal`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `3`
+- `true`, `false`, `nil`, `null`, `None`.
+- **Example:** `literal = 11`
+
+### `colors.string`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `2`
+- Single-, double- and raw-quoted strings.
+- **Example:** `string = 10`
+
+### `colors.number`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `6`
+- Numbers in decimal, hex (`0x1F`), binary, octal and exponent (`1e-5`) forms.
+- **Example:** `number = 14`
+
+### `colors.operator`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `1`
+- Operators such as `=`, `==`, `!=`, `&&`, `||`, `:=`, `->`.
+- **Example:** `operator = 9`
+
+### `colors.comment`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `-1`
+- Comments. `-1` draws them dim and italic in the default foreground, which stays readable in every theme.
+- **Example:** `comment = 8`
+
+### `colors.key`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `4`
+- JSON object keys.
+- **Example:** `key = 12`
+
+### `colors.bracket_error`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `1`
+- Unmatched or mismatched brackets; they are also shown in reverse video.
+- **Example:** `bracket_error = 9`
+
+### `colors.bracket_depth`
+- **Type:** list of integers `0`-`15` (ANSI slots), not empty
+- **Default:** `[3, 5, 6, 2, 4]`
+- Bracket pairs `() [] {}` are coloured by nesting depth, cycling through this list. Brackets inside strings and comments are ignored.
+- **Example:** `bracket_depth = [9, 11, 10, 14, 12, 13]`
+
 ## Connection profiles (`connections.toml`)
 
 Not part of `config.toml`, and never committed. Copy `config/default/connections.example.toml` to
@@ -218,4 +298,4 @@ Highlighting is table-driven (`src/syntax.rs`); there is no per-language code.
    `every_language_is_registered_and_named_uniquely`.
 4. `make test-unit`.
 
-Colours are chosen in `kind_style` in `src/render.rs`; use ANSI palette colours or modifiers only.
+Colours are chosen by role in `kind_style` in `src/render.rs` (configured through `[colors]`); use palette slots or modifiers only.

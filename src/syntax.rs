@@ -16,6 +16,11 @@ pub enum Kind {
     Comment,
     /// JSON object keys and similar names.
     Key,
+    Operator,
+    /// A bracket; the payload is its nesting depth (0 = outermost).
+    Bracket(u8),
+    /// An unmatched or mismatched bracket.
+    BracketError,
 }
 
 #[derive(Debug)]
@@ -40,6 +45,12 @@ pub struct LangSpec {
     pub shell_vars: bool,
     /// Strings followed by `:` are keys (JSON).
     pub key_colon: bool,
+    /// Operator tokens; the longest match at a position wins.
+    pub operators: &'static [&'static str],
+    /// Colour `()[]{}` by nesting depth.
+    pub brackets: bool,
+    /// Flag unmatched / mismatched brackets (off for shell, where `case x in a)` is legal).
+    pub bracket_errors: bool,
 }
 
 const EMPTY: &[&str] = &[];
@@ -60,6 +71,9 @@ const BASE: LangSpec = LangSpec {
     case_insensitive: false,
     shell_vars: false,
     key_colon: false,
+    operators: EMPTY,
+    brackets: false,
+    bracket_errors: false,
 };
 
 pub static PLAIN: LangSpec = BASE;
@@ -206,6 +220,12 @@ pub static SQL: LangSpec = LangSpec {
     block_comment: Some(("/*", "*/")),
     string_quotes: &['\'', '"', '`'],
     case_insensitive: true,
+    operators: &[
+        "->>", "->", "#>>", "#>", "::", "<>", "!=", "<=", ">=", "||", "&&", "<<", ">>", "=", "<", ">", "+", "-", "*", "/", "%", "|", "&",
+        "^", "~",
+    ],
+    brackets: true,
+    bracket_errors: true,
     ..BASE
 };
 
@@ -285,6 +305,12 @@ pub static GO: LangSpec = LangSpec {
     block_comment: Some(("/*", "*/")),
     string_quotes: &['"', '\''],
     raw_quote: Some('`'),
+    operators: &[
+        "<<=", ">>=", "&^=", "...", "&&", "||", "<-", "++", "--", "==", "!=", "<=", ">=", ":=", "+=", "-=", "*=", "/=", "%=", "&=", "|=",
+        "^=", "<<", ">>", "&^", "+", "-", "*", "/", "%", "=", "<", ">", "!", "&", "|", "^",
+    ],
+    brackets: true,
+    bracket_errors: true,
     ..BASE
 };
 
@@ -333,6 +359,12 @@ pub static PYTHON: LangSpec = LangSpec {
     line_comments: &["#"],
     string_quotes: &['"', '\''],
     triple_quotes: true,
+    operators: &[
+        "**=", "//=", ">>=", "<<=", "->", "==", "!=", "<=", ">=", ":=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "@=", "**", "//",
+        "<<", ">>", "+", "-", "*", "/", "%", "=", "<", ">", "&", "|", "^", "~", "@",
+    ],
+    brackets: true,
+    bracket_errors: true,
     ..BASE
 };
 
@@ -353,6 +385,9 @@ pub static SHELL: LangSpec = LangSpec {
     line_comments: &["#"],
     string_quotes: &['"', '\''],
     shell_vars: true,
+    operators: &["&&", "||", ">>", "<<", ">&", "<&", "|&", ";;", "!=", "==", "=~", "=", ">", "<", "|", "&"],
+    brackets: true,
+    bracket_errors: false,
     ..BASE
 };
 
@@ -363,6 +398,8 @@ pub static JSON: LangSpec = LangSpec {
     literals: &["true", "false", "null"],
     string_quotes: &['"'],
     key_colon: true,
+    brackets: true,
+    bracket_errors: true,
     ..BASE
 };
 
@@ -443,12 +480,19 @@ pub fn highlight(spec: &LangSpec, lines: &[String]) -> Vec<Vec<Kind>> {
         return lines.iter().map(|l| vec![Kind::Plain; l.chars().count()]).collect();
     }
     let mut state = State::Normal;
+    // open brackets: (char, line, column)
+    let mut stack: Vec<(char, usize, usize)> = Vec::new();
     let mut out = Vec::with_capacity(lines.len());
-    for line in lines {
+    for (li, line) in lines.iter().enumerate() {
         let chars: Vec<char> = line.chars().collect();
         let mut kinds = vec![Kind::Plain; chars.len()];
-        state = highlight_line(spec, &chars, &mut kinds, state);
+        state = highlight_line(spec, &chars, &mut kinds, state, li, &mut stack);
         out.push(kinds);
+    }
+    if spec.bracket_errors {
+        for (_, l, c) in stack {
+            out[l][c] = Kind::BracketError;
+        }
     }
     out
 }
@@ -460,7 +504,14 @@ fn fill(kinds: &mut [Kind], from: usize, to: usize, k: Kind) {
     }
 }
 
-fn highlight_line(spec: &LangSpec, chars: &[char], kinds: &mut [Kind], mut state: State) -> State {
+fn highlight_line(
+    spec: &LangSpec,
+    chars: &[char],
+    kinds: &mut [Kind],
+    mut state: State,
+    line: usize,
+    stack: &mut Vec<(char, usize, usize)>,
+) -> State {
     let n = chars.len();
     let mut i = 0;
     while i < n {
@@ -620,6 +671,36 @@ fn highlight_line(spec: &LangSpec, chars: &[char], kinds: &mut [Kind], mut state
             }
             let word: String = chars[start..i].iter().collect();
             fill(kinds, start, i, lookup(spec, &word));
+            continue;
+        }
+
+        // brackets, coloured by nesting depth
+        if spec.brackets && matches!(c, '(' | '[' | '{') {
+            kinds[i] = Kind::Bracket(stack.len().min(255) as u8);
+            stack.push((c, line, i));
+            i += 1;
+            continue;
+        }
+        if spec.brackets && matches!(c, ')' | ']' | '}') {
+            let want = match c {
+                ')' => '(',
+                ']' => '[',
+                _ => '{',
+            };
+            if stack.last().is_some_and(|(o, ..)| *o == want) {
+                stack.pop();
+                kinds[i] = Kind::Bracket(stack.len().min(255) as u8);
+            } else if spec.bracket_errors {
+                kinds[i] = Kind::BracketError;
+            }
+            i += 1;
+            continue;
+        }
+
+        // operators: longest match
+        if let Some(len) = spec.operators.iter().filter(|op| starts_with_at(chars, i, op)).map(|op| op.chars().count()).max() {
+            fill(kinds, i, i + len, Kind::Operator);
+            i += len;
             continue;
         }
 
@@ -783,5 +864,203 @@ mod tests {
         let src = "x1 = 22";
         assert_eq!(kind_of(&PYTHON, src, 0, "1"), Kind::Plain);
         assert_eq!(kind_of(&PYTHON, src, 0, "22"), Kind::Number);
+    }
+
+    // ---- Part 3.4: operators, numbers, strings, comments, bracket depth ------------------
+
+    /// Non-plain runs of the first line as (text, kind). Brackets are separate tokens (each has its own depth).
+    fn toks(spec: &LangSpec, src: &str) -> Vec<(String, Kind)> {
+        let line = src.split('\n').next().unwrap();
+        let k = &hl(spec, src)[0];
+        let chars: Vec<char> = line.chars().collect();
+        let mut out: Vec<(String, Kind)> = vec![];
+        let mut i = 0;
+        while i < chars.len() {
+            if k[i] == Kind::Plain {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while j < chars.len() && k[j] == k[i] && !matches!(k[i], Kind::Bracket(_) | Kind::BracketError) {
+                j += 1;
+            }
+            out.push((chars[i..j].iter().collect(), k[i]));
+            i = j;
+        }
+        out
+    }
+
+    fn has(t: &[(String, Kind)], text: &str, kind: Kind) -> bool {
+        t.iter().any(|(s, k)| s == text && *k == kind)
+    }
+
+    #[test]
+    fn multi_character_operators_are_single_tokens() {
+        let t = toks(&GO, "if a == b && c != d || e <= f { x := y + 1; z -= 2 }");
+        for op in ["==", "&&", "!=", "||", "<=", ":=", "+", "-="] {
+            assert!(has(&t, op, Kind::Operator), "{op} in {t:?}");
+        }
+        let t = toks(&PYTHON, "x = a ** b // c -> d; y //= 2; z := 3");
+        for op in ["=", "**", "//", "->", "//=", ":="] {
+            assert!(has(&t, op, Kind::Operator), "{op} in {t:?}");
+        }
+        let t = toks(&SQL, "SELECT a || b, c::int, d <> e, f->>'k' FROM t WHERE x >= 1 AND y != 2");
+        for op in ["||", "::", "<>", "->>", ">=", "!="] {
+            assert!(has(&t, op, Kind::Operator), "{op} in {t:?}");
+        }
+        let t = toks(&SHELL, "a && b || c >> out; x=1");
+        for op in ["&&", "||", ">>", "="] {
+            assert!(has(&t, op, Kind::Operator), "{op} in {t:?}");
+        }
+    }
+
+    #[test]
+    fn longest_operator_wins() {
+        let t = toks(&GO, "a <<= 2");
+        assert!(has(&t, "<<=", Kind::Operator), "{t:?}");
+        assert!(!has(&t, "<", Kind::Operator));
+        let t = toks(&GO, "a &^= 2");
+        assert!(has(&t, "&^=", Kind::Operator), "{t:?}");
+    }
+
+    #[test]
+    fn json_has_no_operators() {
+        let t = toks(&JSON, "{\"a\": 1, \"b\": [true]}");
+        assert!(t.iter().all(|(_, k)| *k != Kind::Operator), "{t:?}");
+    }
+
+    #[test]
+    fn operators_inside_strings_and_comments_are_not_operators() {
+        let t = toks(&GO, "x := \"a == b\" // c && d");
+        assert_eq!(t.iter().filter(|(_, k)| *k == Kind::Operator).count(), 1, "only := : {t:?}");
+    }
+
+    #[test]
+    fn numbers_in_decimal_hex_exponent_and_other_forms() {
+        for (lang, src, num) in [
+            (&GO, "x := 42", "42"),
+            (&GO, "x := 3.14", "3.14"),
+            (&GO, "x := 0xDEADbeef", "0xDEADbeef"),
+            (&GO, "x := 1_000_000", "1_000_000"),
+            (&GO, "x := 0b1010", "0b1010"),
+            (&GO, "x := 0o17", "0o17"),
+            (&PYTHON, "x = 1e10", "1e10"),
+            (&PYTHON, "x = 2.5E-3", "2.5E-3"),
+            (&PYTHON, "x = 1e+5", "1e+5"),
+            (&PYTHON, "x = 0XFF", "0XFF"),
+            (&SQL, "SELECT 1.5e3", "1.5e3"),
+            (&SQL, "SELECT 0x1F", "0x1F"),
+            (&JSON, "[-12.5e-2]", "-12.5e-2"),
+        ] {
+            let t = toks(lang, src);
+            assert!(has(&t, num, Kind::Number), "{src}: {t:?}");
+        }
+    }
+
+    #[test]
+    fn digits_inside_identifiers_are_not_numbers() {
+        let t = toks(&PYTHON, "var2 = x1 + y_3");
+        assert!(t.iter().all(|(_, k)| *k != Kind::Number), "{t:?}");
+    }
+
+    #[test]
+    fn strings_with_escapes_single_and_double_quoted() {
+        let t = toks(&PYTHON, r#"a = 'it\'s' + "say \"hi\"""#);
+        assert!(has(&t, r"'it\'s'", Kind::String), "{t:?}");
+        assert!(has(&t, r#""say \"hi\"""#, Kind::String), "{t:?}");
+        let t = toks(&GO, r#"s := "a\\" + 'b'"#);
+        assert!(has(&t, r#""a\\""#, Kind::String), "backslash-backslash closes the string: {t:?}");
+        assert!(has(&t, "'b'", Kind::String));
+    }
+
+    #[test]
+    fn unterminated_strings_end_at_the_line_end_and_do_not_leak() {
+        let h = hl(&GO, "x := \"abc\ny := 1");
+        assert_eq!(h[0][5], Kind::String);
+        assert_eq!(h[1][2], Kind::Operator, "the next line is tokenised normally");
+        let t = toks(&GO, "y := 1");
+        assert!(has(&t, "1", Kind::Number));
+        let h = hl(&SHELL, "echo 'abc\necho done");
+        assert_eq!(h[1][0], Kind::Builtin, "next line is highlighted normally");
+    }
+
+    #[test]
+    fn comment_syntax_per_language() {
+        assert!(has(&toks(&GO, "x // c"), "// c", Kind::Comment));
+        assert!(has(&toks(&GO, "x /* c */ y"), "/* c */", Kind::Comment));
+        assert!(has(&toks(&PYTHON, "x # c"), "# c", Kind::Comment));
+        assert!(has(&toks(&SQL, "x -- c"), "-- c", Kind::Comment));
+        assert!(has(&toks(&SQL, "x /* c */ y"), "/* c */", Kind::Comment));
+        assert!(has(&toks(&SHELL, "x # c"), "# c", Kind::Comment));
+        assert!(toks(&JSON, "[1] // not a comment in JSON").iter().all(|(_, k)| *k != Kind::Comment));
+        assert!(toks(&GO, "x # not a go comment").iter().all(|(_, k)| *k != Kind::Comment));
+        assert!(toks(&PYTHON, "x // y").iter().all(|(_, k)| *k != Kind::Comment), "// is floor division in Python");
+    }
+
+    fn depths(spec: &LangSpec, src: &str) -> Vec<(char, Kind)> {
+        let line = src.split('\n').next().unwrap();
+        let k = &hl(spec, src)[0];
+        line.chars()
+            .zip(k.iter())
+            .filter(|(c, k)| "()[]{}".contains(*c) && matches!(k, Kind::Bracket(_) | Kind::BracketError))
+            .map(|(c, k)| (c, *k))
+            .collect()
+    }
+
+    #[test]
+    fn bracket_depth_increases_with_nesting_and_pairs_share_a_depth() {
+        let d = depths(&GO, "f(a[b{c}])");
+        let kinds: Vec<Kind> = d.iter().map(|(_, k)| *k).collect();
+        assert_eq!(kinds, vec![Kind::Bracket(0), Kind::Bracket(1), Kind::Bracket(2), Kind::Bracket(2), Kind::Bracket(1), Kind::Bracket(0)]);
+        let d = depths(&PYTHON, "(a)(b)");
+        assert_eq!(d.iter().map(|(_, k)| *k).collect::<Vec<_>>(), vec![Kind::Bracket(0); 4], "siblings are both depth 0");
+    }
+
+    #[test]
+    fn mismatched_and_unmatched_brackets_are_flagged() {
+        let d = depths(&GO, "f(a]");
+        assert_eq!(d[1].1, Kind::BracketError, "wrong closer: {d:?}");
+        assert_eq!(d[0].1, Kind::BracketError, "the opener it failed to close is flagged at end of file");
+        let d = depths(&GO, "a)");
+        assert_eq!(d[0].1, Kind::BracketError, "closer without opener");
+        let d = depths(&GO, "(((");
+        assert!(d.iter().all(|(_, k)| *k == Kind::BracketError), "unclosed openers: {d:?}");
+        let d = depths(&JSON, "{\"a\": [1, 2}");
+        assert!(d.iter().any(|(_, k)| *k == Kind::BracketError));
+    }
+
+    #[test]
+    fn brackets_in_strings_and_comments_are_ignored() {
+        let d = depths(&GO, "f(\"(((\") // )))");
+        assert_eq!(d.len(), 2, "only the real pair counts: {d:?}");
+        assert!(d.iter().all(|(_, k)| *k == Kind::Bracket(0)));
+        let d = depths(&PYTHON, "x = '[' # ]");
+        assert!(d.is_empty(), "{d:?}");
+        let d = depths(&SQL, "SELECT '(' /* ) */ , (1)");
+        assert_eq!(d.len(), 2);
+    }
+
+    #[test]
+    fn brackets_match_across_lines_and_unclosed_openers_are_flagged_at_eof() {
+        let h = hl(&GO, "f(\n  g(\n  )\n)");
+        assert_eq!(h[0][1], Kind::Bracket(0));
+        assert_eq!(h[1][3], Kind::Bracket(1));
+        assert_eq!(h[2][2], Kind::Bracket(1));
+        assert_eq!(h[3][0], Kind::Bracket(0));
+        let h = hl(&GO, "f(\n  g(\n  )");
+        assert_eq!(h[0][1], Kind::BracketError, "outer paren never closed");
+        assert_eq!(h[1][3], Kind::Bracket(1));
+    }
+
+    #[test]
+    fn shell_does_not_flag_case_pattern_parens() {
+        let h = hl(&SHELL, "case $x in\n  a) echo a;;\nesac");
+        assert!(h.iter().flatten().all(|k| *k != Kind::BracketError));
+    }
+
+    #[test]
+    fn plain_text_has_no_brackets_or_operators() {
+        let h = hl(&PLAIN, "(a == b]");
+        assert!(h[0].iter().all(|k| *k == Kind::Plain));
     }
 }

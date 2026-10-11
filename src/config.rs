@@ -108,6 +108,43 @@ impl Default for UiConfig {
     }
 }
 
+/// Colour roles mapped to ANSI palette slots: 0-15, or -1 for "default foreground".
+/// The actual colours come from the terminal's theme.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColorsConfig {
+    pub keyword: i8,
+    pub builtin: i8,
+    pub literal: i8,
+    pub string: i8,
+    pub number: i8,
+    pub operator: i8,
+    /// -1 draws comments dim and italic in the default foreground.
+    pub comment: i8,
+    pub key: i8,
+    /// Unmatched / mismatched brackets (also drawn in reverse video).
+    pub bracket_error: i8,
+    /// Colours cycled through by bracket nesting depth.
+    pub bracket_depth: Vec<i8>,
+}
+
+impl Default for ColorsConfig {
+    fn default() -> Self {
+        Self {
+            keyword: 5,
+            builtin: 4,
+            literal: 3,
+            string: 2,
+            number: 6,
+            operator: 1,
+            comment: -1,
+            key: 4,
+            bracket_error: 1,
+            bracket_depth: vec![3, 5, 6, 2, 4],
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -116,6 +153,7 @@ pub struct Config {
     pub find: FindConfig,
     pub sql: SqlConfig,
     pub ui: UiConfig,
+    pub colors: ColorsConfig,
 }
 
 /// Environment variables the program reads (documented in docs/CUSTOMIZATION.md).
@@ -193,6 +231,7 @@ impl Config {
             find: section(&table, "find", &mut warnings),
             sql: section(&table, "sql", &mut warnings),
             ui: section(&table, "ui", &mut warnings),
+            colors: section(&table, "colors", &mut warnings),
         };
         cfg.validate(&mut warnings);
         (cfg, warnings)
@@ -212,6 +251,33 @@ impl Config {
         if !RESULT_VIEWS.contains(&self.sql.result_view.as_str()) {
             warnings.push(format!("sql.result_view = {:?} is not one of {:?}; using \"split\"", self.sql.result_view, RESULT_VIEWS));
             self.sql.result_view = "split".into();
+        }
+        let dc = ColorsConfig::default();
+        macro_rules! slot {
+            ($key:ident) => {
+                if !(-1..=15).contains(&self.colors.$key) {
+                    warnings.push(format!(
+                        "colors.{} = {} is not an ANSI slot (0-15, or -1 for the default foreground); using {}",
+                        stringify!($key),
+                        self.colors.$key,
+                        dc.$key
+                    ));
+                    self.colors.$key = dc.$key;
+                }
+            };
+        }
+        slot!(keyword);
+        slot!(builtin);
+        slot!(literal);
+        slot!(string);
+        slot!(number);
+        slot!(operator);
+        slot!(comment);
+        slot!(key);
+        slot!(bracket_error);
+        if self.colors.bracket_depth.is_empty() || self.colors.bracket_depth.iter().any(|c| !(0..=15).contains(c)) {
+            warnings.push(format!("colors.bracket_depth must be a non-empty list of ANSI slots 0-15; using {:?}", dc.bracket_depth));
+            self.colors.bracket_depth = dc.bracket_depth.clone();
         }
         let d = Config::default();
         macro_rules! at_least_one {
@@ -329,6 +395,19 @@ mod tests {
         assert_eq!(c.sql.table_max_rows, 25);
         assert_eq!(w.len(), 4, "{w:?}");
         assert_eq!(c.editor.indent_style, "tabs");
+    }
+
+    #[test]
+    fn color_roles_validate_ansi_slots() {
+        let (c, w) = Config::from_toml("[colors]\nkeyword = 12\nstring = 99\ncomment = -1\nbracket_depth = [1, 2]\n");
+        assert_eq!((c.colors.keyword, c.colors.comment, c.colors.bracket_depth.clone()), (12, -1, vec![1, 2]));
+        assert_eq!(c.colors.string, 2, "out-of-range slot falls back to the default");
+        assert_eq!(w.len(), 1, "{w:?}");
+        let (c, w) = Config::from_toml("[colors]\nbracket_depth = []\n");
+        assert_eq!(c.colors.bracket_depth, ColorsConfig::default().bracket_depth);
+        assert_eq!(w.len(), 1);
+        let (_, w) = Config::from_toml("[colors]\nbracket_depth = [3, 16]\n");
+        assert_eq!(w.len(), 1);
     }
 
     #[test]

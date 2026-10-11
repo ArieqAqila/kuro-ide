@@ -3,6 +3,7 @@
 //! terminal's own background shows through in dark and light themes.
 
 use crate::app::{App, Focus, Layout, PromptKind, cell_x};
+use crate::config::ColorsConfig;
 use crate::findbar;
 use crate::syntax::Kind;
 use crate::table;
@@ -11,17 +12,55 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use unicode_width::UnicodeWidthChar;
 
-fn kind_style(k: Kind) -> Style {
-    let s = Style::default();
+/// ANSI palette slot (0-15) -> terminal colour. Never RGB or 256-colour indexes.
+pub fn ansi_color(slot: i8) -> Option<Color> {
+    Some(match slot {
+        0 => Color::Black,
+        1 => Color::Red,
+        2 => Color::Green,
+        3 => Color::Yellow,
+        4 => Color::Blue,
+        5 => Color::Magenta,
+        6 => Color::Cyan,
+        7 => Color::Gray,
+        8 => Color::DarkGray,
+        9 => Color::LightRed,
+        10 => Color::LightGreen,
+        11 => Color::LightYellow,
+        12 => Color::LightBlue,
+        13 => Color::LightMagenta,
+        14 => Color::LightCyan,
+        15 => Color::White,
+        _ => return None,
+    })
+}
+
+fn slot_style(slot: i8) -> Style {
+    match ansi_color(slot) {
+        Some(c) => Style::default().fg(c),
+        None => Style::default(),
+    }
+}
+
+pub fn kind_style(k: Kind, c: &ColorsConfig) -> Style {
     match k {
-        Kind::Plain => s,
-        Kind::Keyword => s.fg(Color::Magenta),
-        Kind::Builtin => s.fg(Color::Blue),
-        Kind::Literal => s.fg(Color::Cyan),
-        Kind::String => s.fg(Color::Green),
-        Kind::Number => s.fg(Color::Cyan),
-        Kind::Comment => s.add_modifier(Modifier::DIM | Modifier::ITALIC),
-        Kind::Key => s.fg(Color::Blue),
+        Kind::Plain => Style::default(),
+        Kind::Keyword => slot_style(c.keyword),
+        Kind::Builtin => slot_style(c.builtin),
+        Kind::Literal => slot_style(c.literal),
+        Kind::String => slot_style(c.string),
+        Kind::Number => slot_style(c.number),
+        Kind::Operator => slot_style(c.operator),
+        Kind::Key => slot_style(c.key),
+        Kind::Comment => match ansi_color(c.comment) {
+            Some(col) => Style::default().fg(col).add_modifier(Modifier::ITALIC),
+            None => Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC),
+        },
+        Kind::Bracket(d) => {
+            let depth = &c.bracket_depth;
+            slot_style(depth[d as usize % depth.len()])
+        }
+        Kind::BracketError => slot_style(c.bracket_error).add_modifier(Modifier::REVERSED | Modifier::BOLD),
     }
 }
 
@@ -95,6 +134,7 @@ impl App {
         let nw = l.gutter_w.saturating_sub(2) as usize;
         let n_matches = if self.find.open { self.find.matches.clone() } else { vec![] };
         let kinds = self.syntax_kinds().clone();
+        let colors = self.cfg.colors.clone();
         let len = self.buffer.len_chars();
 
         for row in 0..h {
@@ -135,7 +175,7 @@ impl App {
                     break;
                 }
                 let abs = ls + ci;
-                let mut style = line_kinds.and_then(|k| k.get(ci)).map(|k| kind_style(*k)).unwrap_or_default();
+                let mut style = line_kinds.and_then(|k| k.get(ci)).map(|k| kind_style(*k, &colors)).unwrap_or_default();
                 if n_matches[first_match..].iter().take_while(|m| m.start < le).any(|m| m.start <= abs && abs < m.end) {
                     style = style.add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
                 }

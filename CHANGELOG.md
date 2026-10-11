@@ -16,6 +16,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   every touched line as one undo step; Shift+Tab with no selection outdents the current line; Backspace in leading
   indentation removes one indent step, not one space; Backspace/Delete on a whitespace run remove the whole run.
 
+- Syntax: operators (`==`, `&&`, `||`, `:=`, `->`, `::`, …), numbers in hex/binary/octal/exponent forms, and
+  bracket-depth colouring that cycles through configurable ANSI slots; unmatched and mismatched brackets are flagged in
+  reverse video; brackets inside strings and comments are ignored.
+- `[colors]` section mapping colour roles to ANSI slots 0-15 (documented in `docs/CUSTOMIZATION.md`).
+- `src/ansi.rs`: an output filter that rewrites crossterm's `38;5;N` palette colours to the classic `30-37`/`90-97`
+  codes, so no 256-colour sequence is ever emitted. `tests/color_rule.rs` and a pty test enforce the colour rule.
+
 ### Changed
 - `editor.tab_width` now defaults to `8` (was `4`); `editor.expand_tab` is replaced by `editor.indent_style`.
 - `editor.relative_numbers` now defaults to `false`.

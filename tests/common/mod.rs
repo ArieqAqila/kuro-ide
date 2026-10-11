@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+pub mod colorscan;
 pub mod pty;
 pub mod sqlview;
 pub mod ui;
