@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Fixed
+- Line numbers no longer restart from 1 above and below the cursor line while editing. Root cause:
+  `editor.relative_numbers` defaulted to `true`, so every other line showed its distance from the cursor line.
+  Absolute numbers are now the default (relative is opt-in). Regression tests:
+  `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
+
+### Changed
+- `editor.relative_numbers` now defaults to `false`.
+- The gutter width follows the digit count of the line count (grows at 10, 100, 1000 lines) and stays stable while scrolling.
+
 ## [0.1.0]
 
 ### Added

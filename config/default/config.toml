@@ -5,7 +5,7 @@ modal = true              # vi-style modes; false = always-insert, VS Code feel
 tab_width = 4
 expand_tab = true
 line_numbers = true
-relative_numbers = true   # current line absolute, others relative
+relative_numbers = false  # true: current line absolute, others relative (opt-in)
 mouse = true
 double_click_ms = 400
 scroll_lines = 3

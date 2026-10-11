@@ -64,15 +64,28 @@ fn background_untouched_in_sql_pane_and_error_pane_too() {
 // ---------------------------------------------------------------- gutter & status
 
 #[test]
-fn gutter_shows_line_numbers_with_relative_numbers_by_default() {
+fn gutter_shows_absolute_line_numbers_by_default() {
     let (mut app, _) = app_with(SAMPLE);
     press(&mut app, "j j"); // cursor on line 3
     let s = screen(&mut app);
-    assert!(s[0].starts_with("   2 alpha"), "{:?}", s[0]);
-    assert!(s[1].starts_with("   1 foo"), "{:?}", s[1]);
-    assert!(s[2].starts_with("   3 SELECT"), "current line shows its absolute number: {:?}", s[2]);
-    assert!(s[3].starts_with("   1 Foo"), "{:?}", s[3]);
-    assert!(s[4].starts_with("   2 last"), "{:?}", s[4]);
+    for (i, row) in s.iter().take(5).enumerate() {
+        assert!(row.starts_with(&format!(" {} ", i + 1)), "row {i}: {row:?}");
+    }
+    assert!(s[0].starts_with(" 1 alpha"), "{:?}", s[0]);
+}
+
+#[test]
+fn relative_numbers_are_opt_in_and_hybrid() {
+    let mut cfg = Config::default();
+    cfg.editor.relative_numbers = true;
+    let (mut app, _) = app_cfg(SAMPLE, cfg);
+    press(&mut app, "j j");
+    let s = screen(&mut app);
+    assert!(s[0].starts_with(" 2 alpha"), "{:?}", s[0]);
+    assert!(s[1].starts_with(" 1 foo"), "{:?}", s[1]);
+    assert!(s[2].starts_with(" 3 SELECT"), "current line shows its absolute number: {:?}", s[2]);
+    assert!(s[3].starts_with(" 1 Foo"), "{:?}", s[3]);
+    assert!(s[4].starts_with(" 2 last"), "{:?}", s[4]);
 }
 
 #[test]
@@ -80,22 +93,45 @@ fn current_line_number_is_highlighted() {
     let (mut app, _) = app_with(SAMPLE);
     press(&mut app, "j");
     let buf = render(&mut app);
-    let cur = &buf[(3, 1)];
+    let cur = &buf[(1, 1)];
     assert_eq!(cur.symbol(), "2");
     assert!(cur.modifier.contains(Modifier::BOLD));
-    assert!(!buf[(3, 0)].modifier.contains(Modifier::BOLD));
-    assert!(buf[(3, 0)].modifier.contains(Modifier::DIM));
+    assert!(!buf[(1, 0)].modifier.contains(Modifier::BOLD));
+    assert!(buf[(1, 0)].modifier.contains(Modifier::DIM));
 }
 
 #[test]
-fn absolute_numbers_when_relative_is_off() {
-    let mut cfg = Config::default();
-    cfg.editor.relative_numbers = false;
-    let (mut app, _) = app_cfg(SAMPLE, cfg);
-    press(&mut app, "j j");
+fn gutter_width_grows_at_10_100_and_1000_lines_and_is_stable_while_scrolling() {
+    let width = |n: usize| {
+        let text = vec!["x"; n].join("\n");
+        let (app, _) = app_with(&text);
+        gutter_w(&app)
+    };
+    assert_eq!(width(1), 3);
+    assert_eq!(width(9), 3);
+    assert_eq!(width(10), 4, "10 lines needs two digits");
+    assert_eq!(width(99), 4);
+    assert_eq!(width(100), 5);
+    assert_eq!(width(999), 5);
+    assert_eq!(width(1000), 6);
+    let text = vec!["x"; 1000].join("\n");
+    let (mut app, _) = app_with(&text);
+    let before = gutter_w(&app);
+    let top = screen(&mut app)[0].clone();
+    press(&mut app, "G");
+    let bottom = screen(&mut app);
+    assert_eq!(gutter_w(&app), before);
+    assert_eq!(top.find('x'), bottom[0].find('x'), "text column does not shift");
+    assert!(bottom.iter().any(|r| r.trim_start().starts_with("1000 x")));
+}
+
+#[test]
+fn empty_file_shows_one_line() {
+    let (mut app, _) = app_with("");
     let s = screen(&mut app);
-    assert!(s[0].starts_with("   1 alpha"));
-    assert!(s[4].starts_with("   5 last"));
+    assert_eq!(s[0].trim_end(), " 1");
+    assert_eq!(s[1].trim_end(), "", "no phantom second line");
+    assert_eq!(app.buffer.line_count(), 1);
 }
 
 #[test]
@@ -289,8 +325,9 @@ fn defaults_from_config_seed_the_toggles() {
 #[test]
 fn click_places_the_cursor() {
     let (mut app, _) = app_with(SAMPLE);
+    let gw = gutter_w(&app);
     render(&mut app);
-    click(&mut app, 5 + 4, 1); // line 2, col 4 ("foo |bar")
+    click(&mut app, gw + 4, 1); // line 2, col 4 ("foo |bar")
     assert_eq!(app.buffer.cursor_line_col(), (1, 4));
     click(&mut app, 70, 2); // far right clamps to line end (normal mode: last char)
     assert_eq!(app.buffer.cursor_line_col().0, 2);
@@ -300,27 +337,29 @@ fn click_places_the_cursor() {
 #[test]
 fn drag_selects_text() {
     let (mut app, _) = app_with(SAMPLE);
+    let gw = gutter_w(&app);
     render(&mut app);
-    mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 5, 0);
-    mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), 10, 0);
-    mouse(&mut app, MouseEventKind::Up(MouseButton::Left), 10, 0);
+    mouse(&mut app, MouseEventKind::Down(MouseButton::Left), gw, 0);
+    mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), gw + 5, 0);
+    mouse(&mut app, MouseEventKind::Up(MouseButton::Left), gw + 5, 0);
     assert_eq!(app.buffer.selected_text().as_deref(), Some("alpha"));
     let buf = render(&mut app);
-    assert!(buf[(5, 0)].modifier.contains(Modifier::REVERSED), "selection is reverse video");
+    assert!(buf[(gw, 0)].modifier.contains(Modifier::REVERSED), "selection is reverse video");
     // multi-line drag
-    mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 11, 0);
-    mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), 8, 1);
+    mouse(&mut app, MouseEventKind::Down(MouseButton::Left), gw + 6, 0);
+    mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), gw + 3, 1);
     assert_eq!(app.buffer.selected_text().as_deref(), Some("beta\nfoo"));
 }
 
 #[test]
 fn double_click_selects_a_word_and_triple_click_a_line() {
     let (mut app, _) = app_with(SAMPLE);
+    let gw = gutter_w(&app);
     render(&mut app);
-    click(&mut app, 5 + 6, 0);
-    click(&mut app, 5 + 6, 0);
+    click(&mut app, gw + 6, 0);
+    click(&mut app, gw + 6, 0);
     assert_eq!(app.buffer.selected_text().as_deref(), Some("beta"));
-    click(&mut app, 5 + 6, 0);
+    click(&mut app, gw + 6, 0);
     assert_eq!(app.buffer.selected_text().as_deref(), Some("alpha beta\n"), "third click selects the line");
 }
 
@@ -340,7 +379,7 @@ fn slow_second_click_is_not_a_double_click() {
 fn clicking_the_gutter_selects_the_whole_line() {
     let (mut app, _) = app_with(SAMPLE);
     render(&mut app);
-    click(&mut app, 2, 1);
+    click(&mut app, 1, 1);
     assert_eq!(app.buffer.selected_text().as_deref(), Some("foo bar foo\n"));
 }
 
@@ -360,15 +399,17 @@ fn wheel_scrolls_the_view_without_moving_the_cursor() {
 #[test]
 fn mouse_works_in_insert_mode_and_modeless_mode_too() {
     let (mut app, _) = app_with(SAMPLE);
+    let gw = gutter_w(&app);
     press(&mut app, "i");
     render(&mut app);
-    click(&mut app, 5 + 3, 0);
+    click(&mut app, gw + 3, 0);
     assert_eq!(app.buffer.cursor_line_col(), (0, 3));
     typed(&mut app, "X");
     assert!(text_of(&app).starts_with("alpXha"));
     let (mut app, _) = modeless(SAMPLE);
+    let gw = gutter_w(&app);
     render(&mut app);
-    click(&mut app, 5 + 2, 3);
+    click(&mut app, gw + 2, 3);
     assert_eq!(app.buffer.cursor_line_col(), (3, 2));
 }
 
@@ -645,14 +686,15 @@ fn control_characters_in_the_buffer_cannot_escape_into_the_terminal() {
 #[test]
 fn wide_and_tab_characters_keep_the_cursor_aligned() {
     let (mut app, _) = modeless("日本語\n\tx");
+    let gw = gutter_w(&app);
     press(&mut app, "right right");
     let area = ratatui::layout::Rect::new(0, 0, W, H);
     let mut buf = ratatui::buffer::Buffer::empty(area);
     let cur = app.render(&mut buf, area).unwrap();
-    assert_eq!(cur, (5 + 4, 0), "two double-width chars");
+    assert_eq!(cur, (gw + 4, 0), "two double-width chars");
     press(&mut app, "down home");
     let cur = app.render(&mut buf, area).unwrap();
-    assert_eq!(cur.0, 5 + 4, "after home on '\\tx' the cursor is on the first non-blank (after the 4-wide tab)");
+    assert_eq!(cur.0, gw + 4, "after home on '\\tx' the cursor is on the first non-blank (after the 4-wide tab)");
 }
 
 #[test]
@@ -675,4 +717,53 @@ fn mods_are_ignored_for_keyboard_release_events() {
     e.kind = KeyEventKind::Release;
     app.handle_key(e);
     assert_eq!(text_of(&app), "");
+}
+
+// ---------------------------------------------------------------- regression: line numbers while editing
+
+/// First whitespace-separated token of each text row of the gutter, for rows `0..n`.
+fn gutter_numbers(app: &mut kuro::app::App, n: usize) -> Vec<String> {
+    screen(app).iter().take(n).map(|r| r.split_whitespace().next().unwrap_or("").to_string()).collect()
+}
+
+fn ten_lines() -> String {
+    (1..=10).map(|i| format!("line number {i}")).collect::<Vec<_>>().join("\n")
+}
+
+fn absolute() -> Vec<String> {
+    (1..=10).map(|i| i.to_string()).collect()
+}
+
+/// REGRESSION: in a 10-line file, editing line 5 made the numbers above and below it restart
+/// from 1 (4 3 2 1 5 1 2 3 4 5) instead of staying absolute (1..10).
+/// Root cause: `editor.relative_numbers` defaulted to true, so every line other than the cursor line
+/// was rendered as its distance from the cursor line. Not a stale line count: the gutter always
+/// used the current count. Fix: absolute numbers are the default; relative is opt-in.
+#[test]
+fn regression_gutter_stays_absolute_while_editing_line_5_of_10() {
+    let (mut app, _) = app_with(&ten_lines());
+    assert_eq!(gutter_numbers(&mut app, 10), absolute(), "before any edit");
+    press(&mut app, "4 j"); // cursor on line 5
+    assert_eq!(app.buffer.cursor_line_col().0, 4);
+    assert_eq!(gutter_numbers(&mut app, 10), absolute(), "cursor on line 5, normal mode");
+    press(&mut app, "A");
+    typed(&mut app, " edited");
+    assert_eq!(gutter_numbers(&mut app, 10), absolute(), "while typing on line 5");
+    press(&mut app, "esc");
+    assert_eq!(gutter_numbers(&mut app, 10), absolute(), "after leaving insert mode");
+    press(&mut app, "o");
+    typed(&mut app, "new line");
+    let mut want = absolute();
+    want.push("11".into());
+    assert_eq!(gutter_numbers(&mut app, 11), want, "a line added after line 5 renumbers the rest, still absolute");
+    press(&mut app, "esc d d");
+    assert_eq!(gutter_numbers(&mut app, 10), absolute(), "after deleting a line");
+}
+
+#[test]
+fn regression_gutter_stays_absolute_when_modeless() {
+    let (mut app, _) = modeless(&ten_lines());
+    press(&mut app, "down down down down");
+    typed(&mut app, "x");
+    assert_eq!(gutter_numbers(&mut app, 10), absolute());
 }

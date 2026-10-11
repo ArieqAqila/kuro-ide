@@ -253,7 +253,8 @@ impl App {
         }
         let text = Rect::new(area.x, area.y, area.width, avail - pane_h);
         let pane = (pane_h > 0).then(|| Rect::new(area.x, text.bottom(), area.width, pane_h));
-        let digits = self.buffer.line_count().to_string().len().max(3) as u16;
+        // width follows the digit count of the total line count: stable while scrolling, grows at 10/100/1000
+        let digits = self.buffer.line_count().to_string().len() as u16;
         let gutter_w = if self.cfg.editor.line_numbers { digits + 2 } else { 0 };
         Layout { text, gutter_w, pane, status, cmd }
     }

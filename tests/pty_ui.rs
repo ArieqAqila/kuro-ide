@@ -19,7 +19,7 @@ fn paints_text_gutter_status_and_never_a_background() {
     let mut pty = Pty::spawn(dir.path(), CFG, Some(&sample(dir.path())), &[]);
     let s = pty.wait_for("first paint", |s| s.iter().any(|r| r.contains("alpha beta")));
     assert!(s[0].contains("alpha beta") && s[0].trim_start().starts_with('1'), "{:?}", s[0]);
-    assert!(s[1].trim_start().starts_with('1'), "relative number on the next line: {:?}", s[1]);
+    assert!(s[1].trim_start().starts_with('2'), "line numbers are absolute: {:?}", s[1]);
     let status = &s[28];
     assert!(status.contains("NORMAL") && status.contains("sample.txt") && status.contains("Ln 1, Col 1"), "{status:?}");
     pty.assert_default_background();
@@ -60,20 +60,20 @@ fn mouse_click_moves_the_cursor_and_double_click_selects_a_word() {
     let dir = tempfile::tempdir().unwrap();
     let mut pty = Pty::spawn(dir.path(), CFG, Some(&sample(dir.path())), &[]);
     pty.wait_for("start", |s| s.iter().any(|r| r.contains("alpha")));
-    pty.click(5 + 4, 1); // line 2, column 5 (0-based 4)
+    pty.click(3 + 4, 1); // line 2, column 5 (0-based 4)
     pty.wait_for("cursor moved", |s| s[28].contains("Ln 2, Col 5"));
-    assert_eq!(pty.cursor(), (9, 1));
+    assert_eq!(pty.cursor(), (7, 1));
     // drag select
-    pty.mouse("press", 5, 0);
-    pty.mouse("drag", 10, 0);
-    pty.mouse("release", 10, 0);
+    pty.mouse("press", 3, 0);
+    pty.mouse("drag", 8, 0);
+    pty.mouse("release", 8, 0);
     pty.wait_for("selection", |s| s[28].contains("5 selected"));
     // double click
-    pty.click(5 + 7, 0);
-    pty.click(5 + 7, 0);
+    pty.click(3 + 7, 0);
+    pty.click(3 + 7, 0);
     pty.wait_for("word selected", |s| s[28].contains("4 selected"));
     // gutter click selects the line
-    pty.click(2, 2);
+    pty.click(1, 2);
     pty.wait_for("line selected", |s| s[28].contains("11 selected"));
 }
 

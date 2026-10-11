@@ -31,7 +31,7 @@ impl Default for EditorConfig {
             tab_width: 4,
             expand_tab: true,
             line_numbers: true,
-            relative_numbers: true,
+            relative_numbers: false,
             mouse: true,
             double_click_ms: 400,
             scroll_lines: 3,
@@ -263,7 +263,7 @@ mod tests {
     fn defaults_match_spec() {
         let c = Config::default();
         assert!(c.editor.modal);
-        assert!(c.editor.relative_numbers, "relative numbers are on by default");
+        assert!(!c.editor.relative_numbers, "line numbers are absolute by default; relative is opt-in");
         assert_eq!(c.sql.table_max_width, 120);
         assert_eq!(c.sql.table_max_rows, 25);
     }

@@ -130,3 +130,8 @@ pub fn find_on(buf: &Cells, needle: &str) -> Option<(u16, u16)> {
     }
     None
 }
+
+/// Width of the line-number gutter (also the x of the first text column).
+pub fn gutter_w(app: &App) -> u16 {
+    app.layout(Rect::new(0, 0, W, H)).gutter_w
+}

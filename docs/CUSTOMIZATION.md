@@ -47,9 +47,9 @@ or if a documented default differs from the real one. Headings below are the key
 
 ### `editor.relative_numbers`
 - **Type:** boolean
-- **Default:** `true`
-- Hybrid relative numbers: the current line shows its absolute number, the others their distance from it. `false` shows absolute numbers everywhere. Ignored when `line_numbers` is off.
-- **Example:** `relative_numbers = false`
+- **Default:** `false`
+- Numbers are absolute (1, 2, 3, …) by default. `true` switches to hybrid relative numbers: the current line shows its absolute number, the others their distance from it. Ignored when `line_numbers` is off.
+- **Example:** `relative_numbers = true`
 
 ### `editor.mouse`
 - **Type:** boolean
