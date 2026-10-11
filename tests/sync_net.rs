@@ -144,7 +144,11 @@ fn settle(terms: &mut [&mut Term], what: &str, cond: impl Fn(&[&mut Term]) -> bo
         if cond(terms) {
             return;
         }
-        assert!(t.elapsed() < Duration::from_secs(15), "timed out waiting for: {what}\ntexts: {:?}", terms.iter().map(|t| t.text.clone()).collect::<Vec<_>>());
+        assert!(
+            t.elapsed() < Duration::from_secs(15),
+            "timed out waiting for: {what}\ntexts: {:?}",
+            terms.iter().map(|t| t.text.clone()).collect::<Vec<_>>()
+        );
         std::thread::yield_now();
     }
 }
@@ -182,7 +186,11 @@ fn edit_in_two_terminals_and_save_from_a_third_writes_everything() {
     settle(&mut [&mut a, &mut b, &mut c], "saved everywhere", |t| t.iter().all(|x| x.saved == 1));
     assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "A01234B56789");
     // no temporary files left behind
-    let leftovers: Vec<_> = std::fs::read_dir(e.file.parent().unwrap()).unwrap().map(|x| x.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.contains("kuro-tmp")).collect();
+    let leftovers: Vec<_> = std::fs::read_dir(e.file.parent().unwrap())
+        .unwrap()
+        .map(|x| x.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains("kuro-tmp"))
+        .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 
@@ -232,7 +240,9 @@ fn cascading_crashes_still_leave_the_survivors_in_agreement() {
     a.crash();
     b.crash();
     c.insert(0, "c2 ");
-    settle(&mut [&mut c, &mut d], "the last two agree", |t| t[0].text == t[1].text && t[0].text.contains("c1") && t[0].text.contains("d1") && t[0].text.contains("c2"));
+    settle(&mut [&mut c, &mut d], "the last two agree", |t| {
+        t[0].text == t[1].text && t[0].text.contains("c1") && t[0].text.contains("d1") && t[0].text.contains("c2")
+    });
 }
 
 #[test]

@@ -368,7 +368,15 @@ impl LeaderCore {
             self.notices.push("could not write the recovery journal".into());
         }
         self.journal_dirty = true;
-        self.journal_bytes += entry.ops.iter().map(|o| match o { Op::Ins { text, .. } | Op::Del { text, .. } => text.len() + 24, Op::Mark => 8 }).sum::<usize>() + 64;
+        self.journal_bytes += entry
+            .ops
+            .iter()
+            .map(|o| match o {
+                Op::Ins { text, .. } | Op::Del { text, .. } => text.len() + 24,
+                Op::Mark => 8,
+            })
+            .sum::<usize>()
+            + 64;
         entry
     }
 
@@ -555,10 +563,19 @@ impl LeaderCore {
         }
         let Ok(base_text) = valid_utf8(&bytes) else { return };
         let ops = ot::diff_ops(&base_text, &self.doc.to_string());
-        let entries = if ops.is_empty() { vec![] } else { vec![Committed { rev: self.rev, origin: SYSTEM, id: None, kind: Kind::Edit, ops, focus: None }] };
+        let entries = if ops.is_empty() {
+            vec![]
+        } else {
+            vec![Committed { rev: self.rev, origin: SYSTEM, id: None, kind: Kind::Edit, ops, focus: None }]
+        };
         let base_rev = if entries.is_empty() { self.rev } else { self.rev - 1 };
         if self.journal.replace(&self.disk_hash, base_rev, &entries).is_ok() {
-            self.journal_bytes = entries.iter().map(|e| e.ops.iter().map(|o| if let Op::Ins { text, .. } | Op::Del { text, .. } = o { text.len() } else { 0 }).sum::<usize>()).sum();
+            self.journal_bytes = entries
+                .iter()
+                .map(|e| {
+                    e.ops.iter().map(|o| if let Op::Ins { text, .. } | Op::Del { text, .. } = o { text.len() } else { 0 }).sum::<usize>()
+                })
+                .sum();
             self.journal_dirty = false;
         }
     }

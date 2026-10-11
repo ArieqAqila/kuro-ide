@@ -25,9 +25,9 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -49,9 +49,15 @@ impl SyncOptions {
     pub fn from_env(max_file_bytes: u64) -> SyncOptions {
         // SAFETY: geteuid has no preconditions and cannot fail.
         let uid = unsafe { libc::geteuid() };
-        let runtime = std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()).map(|d| PathBuf::from(d).join("kuro")).unwrap_or_else(|| PathBuf::from(format!("/tmp/kuro-{uid}")));
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|v| !v.is_empty())
+            .map(|d| PathBuf::from(d).join("kuro"))
+            .unwrap_or_else(|| PathBuf::from(format!("/tmp/kuro-{uid}")));
         let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp"));
-        let state = std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()).map(|d| PathBuf::from(d).join("kuro")).unwrap_or_else(|| home.join(".local/state/kuro"));
+        let state = std::env::var_os("XDG_STATE_HOME")
+            .filter(|v| !v.is_empty())
+            .map(|d| PathBuf::from(d).join("kuro"))
+            .unwrap_or_else(|| home.join(".local/state/kuro"));
         SyncOptions { runtime_dir: runtime, state_dir: state, max_file_bytes, client_id: None }
     }
 }
@@ -83,7 +89,10 @@ pub enum SyncEvent {
     Editor(Effect),
     Notice(String),
     /// Sync state or role changed.
-    Status { state: State, leader: bool },
+    Status {
+        state: State,
+        leader: bool,
+    },
 }
 
 /// `<key>` for a file: the first 16 hex digits of the hash of its canonical path.
@@ -209,7 +218,8 @@ fn peer_uid(s: &UnixStream) -> Option<u32> {
     let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
     // SAFETY: SO_PEERCRED writes a `ucred` into the buffer we pass, whose size we give in `len`.
-    let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&mut cred as *mut libc::ucred).cast(), &mut len) };
+    let r =
+        unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&mut cred as *mut libc::ucred).cast(), &mut len) };
     (r == 0).then_some(cred.uid)
 }
 
@@ -262,7 +272,14 @@ struct Core {
 }
 
 impl Core {
-    fn new(path: PathBuf, opts: SyncOptions, id: ClientId, tx: Sender<Event>, rx: Receiver<Event>, wake: Arc<dyn Fn() + Send + Sync>) -> Core {
+    fn new(
+        path: PathBuf,
+        opts: SyncOptions,
+        id: ClientId,
+        tx: Sender<Event>,
+        rx: Receiver<Event>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Core {
         let key = key_for(&path);
         Core {
             path,
@@ -333,9 +350,8 @@ impl Core {
     fn become_first_leader(&mut self, lock: File) -> Result<String, StartError> {
         let (ff, jf) = self.factories();
         let now = self.now_ms();
-        let (node, outs) = Node::new_leader(self.id, self.path.clone(), ff, jf, now).map_err(|e| {
-            if e.kind() == io::ErrorKind::InvalidData { StartError::NotUtf8 } else { StartError::Io(e.to_string()) }
-        })?;
+        let (node, outs) = Node::new_leader(self.id, self.path.clone(), ff, jf, now)
+            .map_err(|e| if e.kind() == io::ErrorKind::InvalidData { StartError::NotUtf8 } else { StartError::Io(e.to_string()) })?;
         self.lock = Some(lock);
         self.node = Some(node);
         self.start_listening().map_err(|e| StartError::Io(format!("socket: {e}")))?;
