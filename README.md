@@ -74,11 +74,37 @@ undo/redo and save are shared, and nothing is lost if a kuro process dies. Nothi
 
 Connections are not encrypted (no TLS yet): use local databases or an SSH tunnel.
 
-### Configure
+## Setup
 
-Options live in one TOML file (`config/default/config.toml`). Point `KURO_CONFIG_DIR` at a folder containing your own
-`config.toml` to use it. Every option is documented in [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md). Invalid
-settings give a warning (`:warnings`), never a crash.
+Everything is optional; kuro works out of the box.
+
+**Config file.** All options are in `config/default/config.toml`. To use your own copy:
+
+```fish
+mkdir -p ~/.config/kuro-conf; and cp ~/src/kuro/config/default/config.toml ~/.config/kuro-conf/config.toml
+set -Ux KURO_CONFIG_DIR ~/.config/kuro-conf
+```
+
+Every option (type, default, example) is in [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md); invalid settings give a
+warning (`:warnings`), never a crash. Common ones:
+
+| Setting | Effect |
+|---|---|
+| `[editor] modal = false` | VS Code feel: no Normal/Insert modes |
+| `[editor] indent_style = "spaces"`, `indent_size = 4` | spaces instead of hard tabs |
+| `[editor] relative_numbers = true` | relative line numbers (absolute is the default) |
+| `[sql] run_fallback_key = "alt+enter"` | key that runs SQL where Ctrl+Enter is not available |
+| `[sync] enabled`, `max_file_mib` | live sync between terminals, and its file size limit (default 5) |
+| `[colors]` | map colour roles (keyword, string, …) to ANSI slots 0-15 |
+
+**Clipboard.** Install `wl-clipboard` (Wayland) or `xclip` / `xsel` (X11). Without them, copy uses OSC 52 and
+paste uses your terminal's paste. Force one with `[clipboard] backend`.
+
+**Ctrl+Enter.** It needs a terminal with the kitty keyboard protocol (kitty, foot, WezTerm with
+`enable_kitty_keyboard = true`, …). kuro detects this at startup; otherwise use the fallback key above. Which terminals:
+[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md#which-terminals-can-send-ctrlenter).
+
+**SQL connections.** See the SQL steps above. Profiles live in `~/.config/kuro/connections.toml`, never in the repo.
 
 ## More
 
