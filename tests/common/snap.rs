@@ -111,19 +111,3 @@ pub fn assert_snapshot(name: &str, buf: &Cells) {
         panic!("{msg}");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::layout::Rect;
-
-    #[test]
-    fn serialization_marks_text_style_and_colour_and_handles_wide_chars() {
-        let mut b = Cells::empty(Rect::new(0, 0, 6, 1));
-        b.set_string(0, 0, "a日b", ratatui::style::Style::default().fg(Color::Red).add_modifier(Modifier::REVERSED));
-        let s = serialize(&b);
-        assert!(s.contains("|a日b  |"), "{s}");
-        assert!(s.contains("|RRRR..|"), "wide char covers two style cells: {s}");
-        assert!(s.contains("|rrrr..|"), "{s}");
-    }
-}

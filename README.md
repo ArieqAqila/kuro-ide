@@ -1,37 +1,41 @@
 # kuro
 
-A `vi`-style terminal editor that behaves like VS Code in usability, with a built-in SQL client
-for **PostgreSQL** and **MariaDB**. It draws with your terminal's own background and ANSI palette:
-it never sets a background colour, so dark and light themes (and transparency) just work.
+A `vi`-style terminal editor that behaves like VS Code in usability, with a built-in SQL client for
+**PostgreSQL** and **MariaDB**. It draws with your terminal's own background and ANSI palette: it never sets a
+background colour and never emits truecolor or 256-colour sequences, so dark and light themes (and transparency) just work.
 
 * modal editing (Normal / Insert / Visual) that can be switched off for a VS Code feel
+* hard tabs by default (width 8), VS Code-style Tab / Shift+Tab / Backspace / Delete
 * mouse everywhere: click, drag, double-click word, triple-click line, gutter click, wheel
-* system clipboard: Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A (`wl-clipboard`, `xclip`, `xsel`, or OSC 52)
+* system clipboard: Ctrl+C / X / V / A (`wl-clipboard`, `xclip`, `xsel`, or OSC 52)
 * VS Code-style find bar (top-right) with `3 of 12`, Match case / Whole word / Regex, and replace
-* line-number gutter with the current line highlighted and relative numbers (on by default)
-* syntax highlighting: SQL, Go, Python, shell, JSON (table-driven, easy to extend)
-* `:sql` client: run a selection or the whole buffer, scrollable result table, timing, row count,
-  classified errors (syntax / runtime / execution) with line and column, cancel a running query
+* absolute line numbers with the current line highlighted (relative numbers are an option)
+* syntax colouring for SQL, Go, Python, shell and JSON: operators, numbers, strings, comments, keywords and
+  **bracket-depth colours** that cycle through ANSI slots you can remap; `:setlang` picks the language by hand
+* word suggestions while typing, like VS Code's
+* SQL client: **Ctrl+Enter** runs the selection or the statement under the cursor, per-driver snippets, a scrollable
+  result table, timing, row count, warnings, classified errors (syntax / runtime / execution) with line and column, cancel
 
 ## Requirements
 
-* Linux/macOS terminal that speaks xterm sequences (tested in `foot`; nothing is terminal-specific)
+* Linux/macOS terminal that speaks xterm sequences (tested in `foot`; nothing is terminal-specific). For Ctrl+Enter a
+  terminal with the **kitty keyboard protocol** is needed, otherwise use the fallback key
+  ([which terminals](docs/KEYBINDINGS.md#which-terminals-can-send-ctrlenter))
 * Rust 1.85+ (edition 2024) to build: `pacman -S rust` on Arch
-* Optional: `wl-clipboard` (Wayland) or `xclip` / `xsel` (X11) for the system clipboard.
-  Without them, OSC 52 is used for copy.
+* Optional: `wl-clipboard` (Wayland) or `xclip` / `xsel` (X11). Without them OSC 52 is used for copy.
 * Optional: Docker, only to run the integration tests
 
 ## Install (fish)
 
 ```fish
-git clone <this repo> ~/src/kuro; and cd ~/src/kuro
+git clone https://github.com/ArieqAqila/kuro-ide ~/src/kuro; and cd ~/src/kuro
 make install                       # cargo install --path . + fish completions
 fish_add_path ~/.cargo/bin         # once, if ~/.cargo/bin is not on your PATH yet
 kuro --version
 ```
 
-Use it as `vi` **without touching the system `vi`** (see [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for what
-`vi` resolves to on this machine):
+Use it as `vi` **without touching the system `vi`** (see [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for what `vi`
+resolves to on this machine):
 
 ```fish
 alias vi kuro; funcsave vi         # switch: `vi` now runs kuro (stored in ~/.config/fish/functions/vi.fish)
@@ -51,83 +55,32 @@ set -Ux KURO_CONFIG_DIR (pwd)/config/default     # run from the repo root
 kuro notes.txt
 ```
 
-or make a copy `config/me/config.toml` and point `KURO_CONFIG_DIR` at that directory. Every option, with type,
-default and example, is in [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md) (a test keeps it in sync with the code).
-Invalid or unknown settings produce a warning (`:warnings`), never a crash.
+or copy it to `config/me/config.toml` and point `KURO_CONFIG_DIR` there. Every option, with type, default and example,
+is in [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md), including how to map a colour role to a different ANSI slot
+(`[colors]`). A test keeps that file in sync with the code. Invalid or unknown settings produce a warning
+(`:warnings`), never a crash.
 
-For a VS Code feel: `[editor] modal = false`.
+For a VS Code feel: `[editor] modal = false`. For spaces instead of tabs: `indent_style = "spaces"`, `indent_size = 4`.
 
-## Keybindings
+## Keys
 
-Shortcuts marked ★ work in every mode.
+The complete, generated list is in **[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)**. The ones to know:
 
 | Key | Action |
 |---|---|
-| ★ Ctrl+S | Save (asks for a name if the buffer has none) |
-| ★ Ctrl+Q | Quit; if there are unsaved changes asks *Save changes to FILE? [y]es / [n]o / [c]ancel* |
-| ★ Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Undo / redo / redo (Ctrl+Shift+Z needs a terminal with the kitty keyboard protocol, e.g. foot, kitty, wezterm) |
-| ★ Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste (no selection: copy/cut the whole line; pasting that puts it above the cursor line) |
-| ★ Ctrl+A | Select all |
-| ★ Alt+C / Alt+X / Alt+V | Same as Ctrl+C/X/V, for terminals or multiplexers that swallow Ctrl+C/X/V |
-| ★ Ctrl+F / Ctrl+H | Find / find and replace |
-| ★ F3 / Shift+F3 | Next / previous match |
-| ★ Ctrl+P | Command line (same as `:`, works in Insert mode and in modeless mode) |
-| ★ F5 / F6 / F7 | SQL: run selection / run whole buffer / cancel running query |
-| ★ F4 | Focus the SQL result table (and back) |
+| Ctrl+S / Ctrl+Q | Save / quit (asks when there are unsaved changes) |
+| Ctrl+Z, Ctrl+Y (Ctrl+Shift+Z) | Undo, redo |
+| Ctrl+C / X / V / A | Copy, cut, paste, select all (Alt+C/X/V where the terminal reserves Ctrl) |
+| Ctrl+F / Ctrl+H | Find / replace; Enter, Shift+Enter or F3, Shift+F3 step; Esc closes |
+| Ctrl+Enter | SQL: run the selection, or the statement under the cursor (fallback: Alt+Enter) |
+| Alt+L / `:runline` | SQL: run only the current line |
+| Alt+S / `:snippets` | SQL snippets for the connected driver |
+| `:setlang <mode>` | Language mode (a picker without an argument; `auto` to detect again) |
+| `:connect NAME` | Connect with a profile |
+| Ctrl+P or `:` | Command line |
 
-**Ctrl+C and interrupts.** The editor puts the terminal in raw mode, so Ctrl+C is delivered as a key and never
-sends SIGINT; it copies. If your terminal or tmux reserves Ctrl+C/X/V (or you press Ctrl+Shift+C by habit), use
-Alt+C / Alt+X / Alt+V, or the mouse selection plus your terminal's own copy.
-
-### Editing without modes (`editor.modal = false`, or Insert mode)
-
-Arrows move; Shift+arrows select; Ctrl+arrows jump by word; Home toggles first non-blank / line start;
-Ctrl+Home / Ctrl+End; PageUp / PageDown; Tab / Shift+Tab; Alt+Backspace deletes a word; Enter keeps the indent.
-Esc leaves Insert mode in modal mode (and does nothing in modeless mode).
-
-### Normal mode
-
-| Keys | Action |
-|---|---|
-| `h j k l`, arrows | Move (counts work: `5j`) |
-| `w b e`, `0 ^ $`, `gg G`, `NG`/`Ngg` | Word and line motions, go to line N |
-| `i a I A o O` | Enter Insert mode (at / after cursor, line start / end, new line below / above) |
-| `x X` | Delete char under / before cursor (`3x`) |
-| `d{motion}` `y{motion}` `c{motion}` | Delete / yank / change over a motion; `dd yy cc` (`3dd`); `D C Y` |
-| `p P` | Paste after / before (linewise registers paste whole lines) |
-| `u`, Ctrl+R | Undo / redo |
-| `v`, `V` | Visual / Visual-line mode: motions extend; `d x y c p o` act; Esc leaves |
-| `:` | Command line |
-| `/`, `n`, `N` | Open the find bar / next / previous match |
-| Ctrl+D / Ctrl+U | Half page down / up |
-| Esc | Cancel pending command / clear selection / close find bar |
-
-This is a deliberate subset of vi (no macros, marks, `.` repeat, text objects or `f`/`t` motions).
-
-### Command line
-
-`:w [file]`, `:q`, `:q!`, `:wq`, `:x`, `:e file`, `:N` (go to line N), `:warnings`, and `:sql …` (below).
-
-### Mouse (all modes, can be turned off with `editor.mouse = false`)
-
-| Action | Result |
-|---|---|
-| Click | Place the cursor |
-| Drag | Select |
-| Double-click / triple-click | Select word / line |
-| Click the line number | Select the whole line |
-| Wheel (Shift+wheel) | Scroll vertically (horizontally) |
-| Click find-bar buttons | Toggle Aa / ab / .* , previous ↑, next ↓, close ✕, replace ↵, replace all ⇉ |
-| Over the result table | Wheel scrolls rows, Shift+wheel / horizontal wheel scrolls columns; click a header to select a column; double-click a header to expand it |
-
-### Find bar
-
-`Ctrl+F` opens it in the top-right corner: query field, `N of M` counter, and the toggles **Match case**
-(`Alt+C`), **Whole word** (`Alt+W`), **Regex** (`Alt+R`). All matches are highlighted (underlined); the current
-one is selected. `Enter` / `Shift+Enter` (or `F3` / `Shift+F3`, or ↓ / ↑) go to the next / previous match and
-wrap around; `Esc` closes. `Ctrl+H` adds a replace row: `Tab` switches fields, `Enter` in the replace field replaces
-the current match, `Alt+A` (or `Alt+Enter`) replaces all in one undo step. In regex mode `$1` works in the replacement.
-`Shift+Enter` needs the kitty keyboard protocol; `F3`/`Shift+F3`/↑ work everywhere.
+**Ctrl+C is a copy, not an interrupt:** kuro uses raw mode, so Ctrl+C reaches the editor as a key. If your terminal or
+multiplexer reserves Ctrl+C/X/V, use Alt+C/X/V.
 
 ## SQL client
 
@@ -135,107 +88,89 @@ Supported databases: **PostgreSQL** and **MariaDB** only.
 
 ### Add a connection
 
-1. Copy the example and edit it (it lives outside the repo; `connections.toml` is gitignored):
+1. Copy the example (it lives outside the repo; `connections.toml` is gitignored):
 
    ```fish
    mkdir -p ~/.config/kuro
    cp config/default/connections.example.toml ~/.config/kuro/connections.toml
-   $EDITOR ~/.config/kuro/connections.toml     # or: kuro ~/.config/kuro/connections.toml
+   $EDITOR ~/.config/kuro/connections.toml
    ```
 
-2. Credentials are **never stored in plaintext**. A profile may reference environment variables
-   (`user = "env:PGUSER"`, `password = "env:PGPASSWORD"`) or ask for the password at connect time
-   (`password = "prompt"`, input is masked). A literal password in the file is rejected.
+2. Credentials are **never stored in plaintext**: a profile may reference environment variables
+   (`user = "env:PGUSER"`, `password = "env:PGPASSWORD"`) or ask at connect time (`password = "prompt"`, masked).
+   A literal password in the file is rejected. For example, for this shell only:
 
    ```fish
-   set -x PGUSER app; set -x PGPASSWORD (read -s -P 'password: ')   # for this shell only
+   set -x PGUSER app; set -x PGPASSWORD (read -s -P 'password: ')
    ```
 
-3. In the editor: `:sql connect local_pg` (status bar shows `● postgres://user@host:port/db`).
+3. In the editor: `:connect local_pg` (the status bar then shows `● postgres://user@host:port/db`).
 
-Connections are **not encrypted** (no TLS support yet): use them for local/dev databases or through an SSH tunnel.
+Connections are **not encrypted** (no TLS yet): use them for local/dev databases or through an SSH tunnel.
 
-### Commands
+### Running queries
 
-| Command / key | Action |
-|---|---|
-| `:sql connect NAME` | Connect with profile NAME (replaces any current connection) |
-| `:sql disconnect` | Cancel anything running and disconnect |
-| `:sql run` or **F5** | Run the **selection** (select with `v`/`V`, Shift+arrows or the mouse) |
-| `:sql buffer` or **F6** | Run the **whole buffer** |
-| `:sql cancel` or **F7** | Cancel the running query (`pg_cancel_query` / `KILL QUERY`) |
-| `:sql close`, `:sql show`, `:sql profiles` | Hide / show the result pane, list profiles |
+* **Ctrl+Enter** runs the selection, or the statement under the cursor when nothing is selected (statements are split
+  at `;` outside quotes and comments; PostgreSQL `$$` bodies and MariaDB backslash/`#` rules are honoured).
+* **Terminals without the kitty keyboard protocol cannot send Ctrl+Enter** (it arrives as a plain Enter). kuro
+  detects that at startup, tells you, and the **fallback key** (`sql.run_fallback_key`, default **Alt+Enter**) or
+  `:run` does the same thing. [Which terminals support it](docs/KEYBINDINGS.md#which-terminals-can-send-ctrlenter).
+* **Alt+L** / `:runline` runs just the current line, `:runbuffer` (or F6) the whole buffer, F7 / `:cancel` cancels.
+  **F5 no longer runs anything.**
+* **Not connected?** A SQL buffer stays in Normal mode and shows *Not connected to a database. Use :connect
+  <profile>*; Insert mode and edits are refused until you connect (`sql.block_editing_when_disconnected`).
+* **Snippets** (Alt+S, `:snippets`): lists differ per driver (`SHOW TABLES` / `DESCRIBE` / `LIMIT x, y` / `DATE_ADD` on
+  MariaDB; `information_schema` / `FETCH FIRST` / `interval` / `ON CONFLICT` on PostgreSQL). Without a connection a
+  generic list is shown and says so. PostgreSQL's psql commands (`\dt`, `\d`) are client commands, not SQL, so the
+  snippets use `information_schema` instead. Every snippet is executed against both real servers in the tests.
 
 ### Results
 
-Results appear in a pane under the editor (`sql.result_view = "split"`, the default; the editor stays
-usable) or full-screen in front of it (`"tab"`; Esc / F4 flip back and forth).
+Results appear in a pane under the editor (`sql.result_view = "split"`; the editor stays usable) or full-screen in front
+of it (`"tab"`; Esc / F4 flip back and forth).
 
-* **Header** (column name and type) stays visible while scrolling.
-* **Size limits**: at most `sql.table_max_width` cells wide (default 120) and `sql.table_max_rows` rows
-  (default 25) visible at once, fewer if the terminal is smaller. Scroll for the rest.
-* **Scrolling**: F4 focuses the table, then `j k`/arrows, PageUp/PageDown, `g`/`G` for rows;
-  `h l` for columns; `H L` or Ctrl+←/→ by 8 cells; Home/End first/last column. Mouse: wheel, Shift+wheel.
-* **Wide columns** are cut with `…` at `sql.column_max_width` (default 40). Press `e` (or Enter/Space) on the
-  current column, or double-click its header, to expand it (up to the table width); again to collapse.
-* `Ctrl+C` while the table is focused copies the result as TSV. `Esc`/`Tab` returns to the editor, `q` hides the pane.
-* **Status line**: `200 rows · 5.5 ms` (time is measured around the database call; ms or s) or, for failures,
-  `✖ syntax error · 2.0 ms · line 1, col 8` with the server's message above it.
-* **Error categories**
-  * *syntax error*: the statement could not be parsed
-  * *runtime error*: it parsed but failed on data or types (division by zero, bad cast, constraint violation)
-  * *execution error*: environment or object problems: missing table/column, permission denied, connection lost,
-    timeout, cancelled; also the fallback for unknown error codes
-
-  Line and column come from the database (PostgreSQL gives a position; MariaDB's `near '…' at line N` is
-  located inside your script) and are mapped back to buffer coordinates even when only a selection was run.
+* The header (column name and type) stays pinned while scrolling vertically.
+* At most `sql.table_max_width` cells wide (default 120) and `sql.table_max_rows` rows (default 25) are visible at once;
+  scroll with the keyboard (F4, then arrows, `h`/`l`, PageUp/Down, `g`/`G`) or the mouse (wheel, Shift+wheel).
+* Columns wider than `sql.column_max_width` (default 40) end in `…`; press `e` on the current column (or double-click
+  its header) to expand it. SQL `NULL` is drawn dim and italic, distinct from the text `NULL`, with no background.
+* **Status line**: `200 rows · 5.5 ms` (time is measured around the database call) or, for failures,
+  `✖ syntax error · 2.0 ms · line 1, col 8` with the server's message above it. Warnings that do not fail the statement
+  appear as `⚠ …` and are never reported as errors.
+* **Error categories**: *syntax error* (could not parse), *runtime error* (parsed but failed on data or types: division by
+  zero, bad cast, constraint violation), *execution error* (missing table or column, permission denied, connection
+  lost, timeout, cancelled; also the fallback for unknown codes). Line and column come from the database and are mapped
+  back to buffer coordinates, even when only a statement or selection was run.
 
 ## Development
 
 ```fish
-make test               # everything: unit, UI, integration (needs Docker for the last group)
-make test-unit          # find, buffer, table layout, error classification, config, docs check
-make test-ui            # rendering/input on the cell buffer + the real binary in a pty
+make test               # everything (the last group needs Docker)
+make report             # everything, with passed / failed / skipped per test layer
+make test-unit          # logic, input parser, config and keybinding docs checks
+make test-prop          # property / fuzz tests (make test-prop-long for the nightly-size run)
+make test-snapshots     # golden screens
+make test-ui            # cell-buffer UI tests and the real binary in a pty
 make test-integration   # real PostgreSQL and MariaDB in throwaway Docker containers
 make lint               # fmt --check + clippy
-./scripts/ci.sh         # what CI runs (use `sh scripts/ci.sh` in fish)
+make docs               # regenerate the keybinding tables
 ```
 
-Integration tests start `postgres:16-alpine` and `mariadb:11` bound to `127.0.0.1` on random ports with a
-random password, and remove them afterwards. They never connect to anything else. If Docker is not available
-they print `SKIPPED integration test: docker is not available…` and pass; set `KURO_REQUIRE_DOCKER=1` (CI does)
-to make that a failure. To refresh the recorded error fixtures from live servers:
-`env KURO_RECORD_FIXTURES=/tmp/rec.txt make test-integration`, then review `/tmp/rec.txt` against
-`tests/fixtures/db_errors.txt`.
-
-### What the tests cover, and what they do not
-
-| Layer | How | Covers |
-|---|---|---|
-| Unit | `cargo test --lib`, `classify_fixtures`, `docs_check` | find (case/word/regex/wrap/replace), buffer editing/selection/undo/clipboard round-trip, table layout (limits, truncation, scroll, header, empty, one row, wide/unicode), error classification on recorded server messages for both databases, config loading (defaults, unknown keys warn), docs ⇄ code option parity (with self-tests that the check really fails on drift) |
-| UI (cell buffer) | `ui_render`, `ui_sql` | what is painted (never a background, ANSI colours only), find bar position/toggles/count/replace, mouse (click, drag, double/triple click, gutter, wheel, bar buttons), Ctrl+C/X/V/A, modal and modeless editing, table scroll/expand/limits, error pane, query flow with a fake driver (run, errors mapped to buffer lines, cancel), results tab |
-| UI (real terminal) | `pty_ui`, `pty_sql` | the actual binary in a pseudo-terminal read through a terminal emulator (`vt100`): first paint, default background on every cell, find bar top-right, SGR mouse events, Ctrl+C/V, save/quit prompts, and a full PostgreSQL session (connect, run, scroll, expand, errors, cancel) |
-| Integration | `integration_sql` | MariaDB 11 and PostgreSQL 16: connect, typed results, syntax / runtime (incl. type mismatch) / execution (missing table, permission denied) errors, wrong password, 200 000-row result with `row_limit`, long query + cancel, connection loss |
-
-Not tested (be aware):
-
-* the real Wayland/X11 clipboard helpers in CI (only the command selection logic and an in-memory clipboard). An opt-in
-  check against the real clipboard: `env KURO_TEST_REAL_CLIPBOARD=1 cargo test --test clipboard_real`
-  (it saves and restores a text clipboard);
-* mouse behaviour and key encodings of any particular terminal emulator, tmux/screen, or ssh (the pty tests speak
-  generic xterm SGR mouse and legacy key sequences);
-* kitty-keyboard-only combinations (Ctrl+Shift+Z, Shift+Enter) against a real kitty-protocol terminal;
-* database versions other than PostgreSQL 16 and MariaDB 11, TLS connections, and MySQL;
-* very large files and result sets beyond the 200 000-row case.
+See **[docs/TESTING.md](docs/TESTING.md)** for the layers, the rules (deterministic, no fixed sleeps, isolated),
+fixtures, what cannot be tested and why, and the log of changes to existing tests. Integration tests start
+`postgres:16-alpine` and `mariadb:11` bound to `127.0.0.1` on random ports with a random password and remove them
+afterwards; they never connect to anything else. Without Docker they print `SKIPPED …` and pass; set
+`KURO_REQUIRE_DOCKER=1` (CI does) to make that a failure.
 
 ## Layout
 
 ```
-src/            app.rs (input), render.rs (drawing), buffer.rs, find.rs, findbar.rs, table.rs,
-                syntax.rs, clipboard.rs, config.rs, sql/ (drivers, worker, profiles, classify)
+src/            app.rs (input), render.rs (drawing), input.rs (terminal input parser), buffer.rs, find.rs, findbar.rs,
+                indent.rs, suggest.rs, picker.rs, snippets.rs, syntax.rs, table.rs, keymap.rs, keyspec.rs, ansi.rs,
+                clipboard.rs, config.rs, sql/ (drivers, worker, profiles, classify, stmt)
 config/default/ config.toml (all options) and connections.example.toml
-docs/           CUSTOMIZATION.md, ENVIRONMENT.md, ARCHITECTURE.md
-tests/          unit-ish fixtures, UI, pty, integration, docs check
+docs/           CUSTOMIZATION.md, KEYBINDINGS.md, TESTING.md, ENVIRONMENT.md, ARCHITECTURE.md
+tests/          unit-level fixtures, property, snapshot, UI, pty, integration, docs checks
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for history.

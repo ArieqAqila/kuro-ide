@@ -1,0 +1,37 @@
+name: nightly
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    env:
+      KURO_REQUIRE_DOCKER: "1"
+      PROPTEST_CASES: "100000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Long property/fuzz run
+        run: make test-prop-long
+      - name: Upload shrunk failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions
+          path: tests/prop.proptest-regressions
+  full:
+    runs-on: ubuntu-latest
+    env:
+      KURO_REQUIRE_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          docker pull postgres:16-alpine
+          docker pull mariadb:11
+      - name: Everything, with the per-layer report
+        run: sh scripts/test-report.sh

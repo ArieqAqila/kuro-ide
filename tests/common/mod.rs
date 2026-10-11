@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 pub mod colorscan;
+pub mod fakedb;
 pub mod pty;
 pub mod snap;
 pub mod sqlview;

@@ -1,7 +1,8 @@
 # Works the same from fish, bash or zsh:  make test
 CARGO ?= cargo
 
-.PHONY: build install test test-unit test-ui test-integration lint fmt clean
+.PHONY: build install test test-unit test-prop test-prop-long test-snapshots test-ui test-integration \
+        update-snapshots docs report lint fmt clean
 
 build:
 	$(CARGO) build --release
@@ -12,20 +13,44 @@ install:
 	cp completions/kuro.fish $(HOME)/.config/fish/completions/kuro.fish
 
 # everything, in order; stops at the first failing group
-test: test-unit test-ui test-integration
+test: test-unit test-prop test-snapshots test-ui test-integration
 
-# pure logic: find, buffer, table layout, error classification (recorded fixtures), config, docs check
+# pure logic, input parser, config, docs checks (config options and keybindings, both directions), recorded error fixtures
 test-unit:
-	$(CARGO) test --lib --test classify_fixtures --test docs_check
+	$(CARGO) test --lib --test classify_fixtures --test docs_check --test keybindings
 
-# rendering/input on the cell buffer + the real binary in a pseudo-terminal (no database needed)
+# property / fuzz tests, short run (256 cases each). Nightly CI runs test-prop-long.
+test-prop:
+	$(CARGO) test --test prop
+
+test-prop-long:
+	PROPTEST_CASES=$${PROPTEST_CASES:-20000} $(CARGO) test --release --test prop
+
+# whole rendered screens at fixed sizes vs committed files in tests/snapshots/
+test-snapshots:
+	$(CARGO) test --test snapshots
+
+update-snapshots:
+	KURO_UPDATE_SNAPSHOTS=1 $(CARGO) test --test snapshots
+	@echo "review the diff in tests/snapshots/ before committing"
+
+# rendering and input on the cell buffer, plus the real binary in a pseudo-terminal (no database needed)
 test-ui:
-	$(CARGO) test --test ui_render --test ui_sql --test pty_ui
+	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest \
+	  --test color_rule --test pty_ui
 
 # real MariaDB + PostgreSQL in throwaway Docker containers (skipped with a message if Docker is unavailable;
 # set KURO_REQUIRE_DOCKER=1 to make that a failure, as CI does)
 test-integration:
 	$(CARGO) test --test integration_sql --test pty_sql -- --nocapture --test-threads=2
+
+# regenerate the keybinding tables in docs/KEYBINDINGS.md from src/keymap.rs
+docs:
+	sh scripts/gen-keybindings.sh
+
+# run everything and print passed / failed / skipped per test layer
+report:
+	sh scripts/test-report.sh
 
 lint:
 	$(CARGO) fmt --check

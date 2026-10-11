@@ -51,6 +51,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   via `:sql warnings`; they are never reported as errors. Driver `before_statement`/`after_statement` hooks keep the
   extra round trips out of the measured query time.
 
+- Test infrastructure: snapshot tests (22 golden screens), property/fuzz tests with a nightly long run, an injected click
+  clock, a keybinding registry (`src/keymap.rs`) whose generated tables in `docs/KEYBINDINGS.md` and per-binding behaviour
+  probes are checked against the code, `make report` (passed/failed/skipped per layer), `docs/TESTING.md`.
+
 ### Removed
 - **F5** no longer runs a query (use Ctrl+Enter, its fallback key, or `:run`). F6 (run buffer) and F7 (cancel) remain.
 

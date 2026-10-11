@@ -15,9 +15,17 @@ check) fit a purpose-built UI better than plugins.
 | Clipboard | `wl-copy`/`xclip`/`xsel` subprocesses, OSC 52 fallback | no X11/Wayland client libraries needed; behind a trait so tests use a fake |
 | SQL | `postgres` and `mysql` (sync) drivers on a worker thread | UI never blocks; cancel via `pg_cancel_query` / `KILL QUERY` on a second connection |
 
+Input is parsed by our own state machine (`input.rs`) rather than a library, because the requirements (kitty
+`CSI u`, split reads, "never a key from an incomplete sequence") must be testable in isolation. `ansi.rs` wraps the
+output so that crossterm's `38;5;N` palette colours become the classic `30-37`/`90-97` codes, keeping the colour rule
+(no truecolor, no 256-colour, no background) true byte-for-byte.
+
 Modules: `buffer` (text, cursor, selection, undo), `find` (pure engine), `findbar` (state + geometry + drawing),
 `table` (pure layout), `syntax`, `clipboard`, `config`, `sql/{profile,classify,pg,my}` and `sql` (worker/session),
-`app` (state, keyboard, mouse, commands) and `render` (drawing). `main.rs` is only terminal setup and the event loop.
+`app` (state, keyboard, mouse, commands) and `render` (drawing). Also: `input` (terminal input parser), `indent` (tab/outdent/backspace rules),
+`suggest` (word suggestions), `picker` (filterable popup), `snippets` (per-driver SQL), `keymap` (the documented bindings),
+`keyspec` (configurable keys), `ansi` (colour-safe output), `sql/stmt` (statement splitting). `main.rs` is only terminal setup,
+the kitty-protocol query and the event loop.
 
 Data flow: terminal event → `App::handle_key/handle_mouse` → state change → `App::render(&mut Buffer)` →
 ratatui diffs it onto the terminal. Query results come back from the worker through a channel and are picked up

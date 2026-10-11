@@ -9,6 +9,7 @@ pub mod find;
 pub mod findbar;
 pub mod indent;
 pub mod input;
+pub mod keymap;
 pub mod keyspec;
 pub mod picker;
 pub mod render;

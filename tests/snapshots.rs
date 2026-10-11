@@ -46,6 +46,18 @@ impl Driver for Db {
 }
 
 #[test]
+fn the_serializer_marks_text_style_and_colour_and_handles_wide_chars() {
+    use ratatui::layout::Rect;
+    use ratatui::style::{Color, Modifier, Style};
+    let mut b = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 6, 1));
+    b.set_string(0, 0, "a日b", Style::default().fg(Color::Red).add_modifier(Modifier::REVERSED));
+    let s = common::snap::serialize(&b);
+    assert!(s.contains("|a日b  |"), "{s}");
+    assert!(s.contains("|RRRR..|"), "a wide char covers two style cells: {s}");
+    assert!(s.contains("|rrrr..|"), "{s}");
+}
+
+#[test]
 fn editor_with_go_syntax_colours() {
     shot("editor_go", &mut go_app());
 }
