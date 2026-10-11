@@ -10,7 +10,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   Absolute numbers are now the default (relative is opt-in). Regression tests:
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
+### Added
+- Hard tabs by default: `editor.indent_style` (`tabs`/`spaces`), `editor.indent_size`, and `editor.smart_whitespace_delete`.
+- VS Code-style Tab / Shift+Tab / Backspace / Delete: a selection over several lines (or one whole line) indents/outdents
+  every touched line as one undo step; Shift+Tab with no selection outdents the current line; Backspace in leading
+  indentation removes one indent step, not one space; Backspace/Delete on a whitespace run remove the whole run.
+
 ### Changed
+- `editor.tab_width` now defaults to `8` (was `4`); `editor.expand_tab` is replaced by `editor.indent_style`.
 - `editor.relative_numbers` now defaults to `false`.
 - The gutter width follows the digit count of the line count (grows at 10, 100, 1000 lines) and stays stable while scrolling.
 

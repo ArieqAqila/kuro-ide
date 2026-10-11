@@ -6,6 +6,7 @@ use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::find::{next_match, prev_match};
 use crate::findbar::{self, FindBar, TextField, contains};
+use crate::indent::{self, Indent};
 use crate::sql::{self, DbError, ResultSet, Session, profile};
 use crate::syntax::{self, Kind, LangSpec};
 use crate::table::{self, TableOpts, TableState};
@@ -453,9 +454,13 @@ impl App {
     // keyboard
     // ------------------------------------------------------------------
 
-    pub fn handle_key(&mut self, k: KeyEvent) {
+    pub fn handle_key(&mut self, mut k: KeyEvent) {
         if k.kind == KeyEventKind::Release {
             return;
+        }
+        // legacy terminals send BackTab, kitty-protocol terminals send Tab+Shift: treat both as Shift+Tab
+        if k.code == KeyCode::Tab && k.modifiers.contains(KeyModifiers::SHIFT) {
+            k.code = KeyCode::BackTab;
         }
         self.msg = None;
         self.follow = true;
@@ -708,6 +713,128 @@ impl App {
         self.buffer.insert_at_cursor(s);
     }
 
+    fn indent(&self) -> Indent {
+        Indent::from_config(&self.cfg.editor)
+    }
+
+    fn delete_selection_text(&mut self) -> bool {
+        match self.buffer.selection() {
+            Some(r) => {
+                self.buffer.cursor = r.start;
+                self.buffer.remove(r);
+                self.buffer.anchor = None;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// VS Code Backspace: deletes the selection; in leading indentation removes one indent step
+    /// (one tab, or spaces back to the previous stop); on a whitespace run after text removes the whole run.
+    fn backspace(&mut self) {
+        if self.delete_selection_text() {
+            return;
+        }
+        let (l, c) = self.buffer.cursor_line_col();
+        if c == 0 {
+            return self.buffer.delete_back(); // joins with the previous line
+        }
+        let before: String = self.buffer.line(l).chars().take(c).collect();
+        let n = indent::backspace_len(&self.indent(), &before, self.cfg.editor.smart_whitespace_delete);
+        let cur = self.buffer.cursor;
+        self.buffer.remove(cur - n..cur);
+        self.buffer.cursor = cur - n;
+    }
+
+    /// VS Code Delete: deletes the selection; on whitespace removes the whole run; at the end of a line joins the next.
+    fn delete_key(&mut self) {
+        if self.delete_selection_text() {
+            return;
+        }
+        let (l, c) = self.buffer.cursor_line_col();
+        let after: String = self.buffer.line(l).chars().skip(c).collect();
+        match indent::delete_len(&after, self.cfg.editor.smart_whitespace_delete) {
+            0 => self.buffer.delete_forward(),
+            n => {
+                let cur = self.buffer.cursor;
+                self.buffer.remove(cur..cur + n);
+            }
+        }
+    }
+
+    /// Tab / Shift+Tab, following VS Code's rules:
+    /// * a selection over several lines (or one whole line) indents/outdents every touched line;
+    ///   a partial single-line selection is replaced by the indent text (Tab) / outdents the line (Shift+Tab)
+    /// * no selection: Tab inserts at the cursor, Shift+Tab outdents the current line
+    fn tab(&mut self, shift: bool) {
+        let ind = self.indent();
+        let b = &self.buffer;
+        if let Some(r) = b.selection() {
+            let ((l1, c1), (l2, c2)) = (b.line_col(r.start), b.line_col(r.end));
+            let last = if l2 > l1 && c2 == 0 { l2 - 1 } else { l2 };
+            let whole_line = l1 == l2 && c1 == 0 && c2 == b.line_len(l1);
+            if shift {
+                return self.indent_lines(l1, last, true);
+            }
+            if l1 != l2 || whole_line {
+                return self.indent_lines(l1, last, false);
+            }
+            let before: String = b.line(l1).chars().take(c1).collect();
+            let text = ind.tab_text(indent::display_cols(&before, ind.tab_width));
+            return self.insert_text(&text);
+        }
+        if shift {
+            let l = self.buffer.cursor_line_col().0;
+            return self.indent_lines(l, l, true);
+        }
+        let (l, c) = self.buffer.cursor_line_col();
+        let before: String = self.buffer.line(l).chars().take(c).collect();
+        let text = ind.tab_text(indent::display_cols(&before, ind.tab_width));
+        self.insert_text(&text);
+    }
+
+    /// Indent or outdent whole lines `l1..=l2` as one undo step, keeping the selection on the same text.
+    fn indent_lines(&mut self, l1: usize, l2: usize, outdent: bool) {
+        let ind = self.indent();
+        self.buffer.break_group();
+        let (anchor, cursor) = (self.buffer.anchor, self.buffer.cursor);
+        // (line start, chars removed, text added)
+        let mut edits: Vec<(usize, usize, String)> = vec![];
+        for l in l1..=l2 {
+            let text = self.buffer.line(l);
+            let start = self.buffer.line_start(l);
+            if outdent {
+                let n = indent::outdent_len(&ind, &text);
+                if n > 0 {
+                    edits.push((start, n, String::new()));
+                }
+            } else if !text.is_empty() {
+                edits.push((start, 0, ind.level()));
+            }
+        }
+        for (start, n, add) in edits.iter().rev() {
+            if *n > 0 {
+                self.buffer.remove(*start..*start + *n);
+            }
+            if !add.is_empty() {
+                self.buffer.insert(*start, add);
+            }
+        }
+        // where a position ends up after the edits (positions on an edited line shift with it)
+        fn remap(edits: &[(usize, usize, String)], p: usize) -> usize {
+            let mut q = p as isize;
+            for (start, n, add) in edits {
+                if p > *start {
+                    q += if *n > 0 { -((*n).min(p - *start) as isize) } else { add.chars().count() as isize };
+                }
+            }
+            q as usize
+        }
+        self.buffer.cursor = remap(&edits, cursor);
+        self.buffer.anchor = anchor.map(|a| remap(&edits, a));
+        self.buffer.break_group();
+    }
+
     fn insert_key(&mut self, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let alt = k.modifiers.contains(KeyModifiers::ALT);
@@ -739,37 +866,10 @@ impl App {
                 self.buffer.remove(t..c);
                 self.buffer.cursor = t;
             }
-            KeyCode::Backspace => {
-                if let Some(r) = self.buffer.selection() {
-                    self.buffer.cursor = r.start;
-                    self.buffer.remove(r);
-                    self.buffer.anchor = None;
-                } else {
-                    self.buffer.delete_back();
-                }
-            }
-            KeyCode::Delete => {
-                if let Some(r) = self.buffer.selection() {
-                    self.buffer.cursor = r.start;
-                    self.buffer.remove(r);
-                    self.buffer.anchor = None;
-                } else {
-                    self.buffer.delete_forward();
-                }
-            }
-            KeyCode::Tab => {
-                let (_, c) = self.buffer.cursor_line_col();
-                let tw = self.cfg.editor.tab_width;
-                let s = if self.cfg.editor.expand_tab { " ".repeat(tw - c % tw) } else { "\t".into() };
-                self.insert_text(&s);
-            }
-            KeyCode::BackTab => {
-                let (l, _) = self.buffer.cursor_line_col();
-                let n = self.buffer.line(l).chars().take(self.cfg.editor.tab_width).take_while(|c| *c == ' ').count();
-                let s = self.buffer.line_start(l);
-                self.buffer.remove(s..s + n);
-                self.buffer.cursor = self.buffer.cursor.saturating_sub(n).max(s);
-            }
+            KeyCode::Backspace => self.backspace(),
+            KeyCode::Delete => self.delete_key(),
+            KeyCode::Tab => self.tab(false),
+            KeyCode::BackTab => self.tab(true),
             KeyCode::Char(c) if !ctrl && !alt => self.insert_text(&c.to_string()),
             _ => {}
         }

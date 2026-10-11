@@ -6,6 +6,7 @@ pub mod clipboard;
 pub mod config;
 pub mod find;
 pub mod findbar;
+pub mod indent;
 pub mod render;
 pub mod sql;
 pub mod syntax;

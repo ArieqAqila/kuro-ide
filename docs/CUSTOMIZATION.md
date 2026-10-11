@@ -29,15 +29,27 @@ or if a documented default differs from the real one. Headings below are the key
 
 ### `editor.tab_width`
 - **Type:** integer ≥ 1
-- **Default:** `4`
-- Width of a tab stop, for both display and the Tab key.
-- **Example:** `tab_width = 2`
+- **Default:** `8`
+- Display width of a tab character (tab stops are every `tab_width` columns). This only changes how existing tabs are drawn.
+- **Example:** `tab_width = 4`
 
-### `editor.expand_tab`
+### `editor.indent_style`
+- **Type:** string, `"tabs"` or `"spaces"`
+- **Default:** `"tabs"`
+- What the Tab key and indenting a selection insert: hard tab characters, or spaces.
+- **Example:** `indent_style = "spaces"`
+
+### `editor.indent_size`
+- **Type:** integer ≥ 1 (columns)
+- **Default:** `8`
+- With `indent_style = "spaces"`: spaces per indent step (Tab inserts up to the next multiple of this; Shift+Tab and Backspace in leading indentation step back by it). With tabs, one step is always one tab character.
+- **Example:** `indent_size = 4`
+
+### `editor.smart_whitespace_delete`
 - **Type:** boolean
 - **Default:** `true`
-- Tab inserts spaces up to the next tab stop instead of a tab character.
-- **Example:** `expand_tab = false`
+- Backspace after text removes the whole run of spaces/tabs before the cursor, and Delete removes the whole run after it, in one keypress (Backspace in leading indentation always removes one indent step instead). `false` deletes one character at a time.
+- **Example:** `smart_whitespace_delete = false`
 
 ### `editor.line_numbers`
 - **Type:** boolean

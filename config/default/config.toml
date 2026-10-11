@@ -2,8 +2,10 @@
 
 [editor]
 modal = true              # vi-style modes; false = always-insert, VS Code feel
-tab_width = 4
-expand_tab = true
+tab_width = 8             # display width of a tab character
+indent_style = "tabs"     # tabs | spaces
+indent_size = 8           # columns per indent step when indenting with spaces
+smart_whitespace_delete = true
 line_numbers = true
 relative_numbers = false  # true: current line absolute, others relative (opt-in)
 mouse = true

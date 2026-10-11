@@ -15,8 +15,14 @@ use std::path::{Path, PathBuf};
 pub struct EditorConfig {
     /// vi-style modes. When false the editor is always in "insert" (VS Code feel).
     pub modal: bool,
+    /// Display width of a tab character.
     pub tab_width: usize,
-    pub expand_tab: bool,
+    /// tabs | spaces
+    pub indent_style: String,
+    /// Columns per indent step when indenting with spaces (and per outdent).
+    pub indent_size: usize,
+    /// Backspace/Delete remove a whole run of whitespace in one keypress.
+    pub smart_whitespace_delete: bool,
     pub line_numbers: bool,
     pub relative_numbers: bool,
     pub mouse: bool,
@@ -28,8 +34,10 @@ impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             modal: true,
-            tab_width: 4,
-            expand_tab: true,
+            tab_width: 8,
+            indent_style: "tabs".into(),
+            indent_size: 8,
+            smart_whitespace_delete: true,
             line_numbers: true,
             relative_numbers: false,
             mouse: true,
@@ -114,6 +122,7 @@ pub struct Config {
 pub const ENV_VARS: &[&str] = &["KURO_CONFIG_DIR"];
 
 pub const CLIPBOARD_BACKENDS: &[&str] = &["auto", "wl-clipboard", "xclip", "xsel", "osc52"];
+pub const INDENT_STYLES: &[&str] = &["tabs", "spaces"];
 pub const RESULT_VIEWS: &[&str] = &["split", "tab"];
 
 /// Flattened `section.key -> default` map, derived from `Config::default()`.
@@ -195,6 +204,11 @@ impl Config {
                 .push(format!("clipboard.backend = {:?} is not one of {:?}; using \"auto\"", self.clipboard.backend, CLIPBOARD_BACKENDS));
             self.clipboard.backend = "auto".into();
         }
+        if !INDENT_STYLES.contains(&self.editor.indent_style.as_str()) {
+            warnings
+                .push(format!("editor.indent_style = {:?} is not one of {:?}; using \"tabs\"", self.editor.indent_style, INDENT_STYLES));
+            self.editor.indent_style = "tabs".into();
+        }
         if !RESULT_VIEWS.contains(&self.sql.result_view.as_str()) {
             warnings.push(format!("sql.result_view = {:?} is not one of {:?}; using \"split\"", self.sql.result_view, RESULT_VIEWS));
             self.sql.result_view = "split".into();
@@ -209,6 +223,7 @@ impl Config {
             };
         }
         at_least_one!(editor.tab_width);
+        at_least_one!(editor.indent_size);
         at_least_one!(editor.scroll_lines);
         at_least_one!(sql.table_max_width);
         at_least_one!(sql.table_max_rows);
@@ -262,6 +277,7 @@ mod tests {
     #[test]
     fn defaults_match_spec() {
         let c = Config::default();
+        assert_eq!((c.editor.indent_style.as_str(), c.editor.tab_width, c.editor.indent_size), ("tabs", 8, 8), "hard tabs, width 8");
         assert!(c.editor.modal);
         assert!(!c.editor.relative_numbers, "line numbers are absolute by default; relative is opt-in");
         assert_eq!(c.sql.table_max_width, 120);
@@ -270,9 +286,12 @@ mod tests {
 
     #[test]
     fn overrides_apply() {
-        let (c, w) = Config::from_toml("[editor]\nmodal = false\ntab_width = 2\n[sql]\ntable_max_rows = 10\n");
+        let (c, w) = Config::from_toml(
+            "[editor]\nmodal = false\ntab_width = 2\nindent_style = \"spaces\"\nindent_size = 2\n[sql]\ntable_max_rows = 10\n",
+        );
         assert!(!c.editor.modal);
         assert_eq!(c.editor.tab_width, 2);
+        assert_eq!((c.editor.indent_style.as_str(), c.editor.indent_size), ("spaces", 2));
         assert_eq!(c.sql.table_max_rows, 10);
         assert!(w.is_empty());
     }
@@ -302,11 +321,14 @@ mod tests {
 
     #[test]
     fn bad_enum_and_zero_values_are_repaired() {
-        let (c, w) = Config::from_toml("[clipboard]\nbackend = \"pigeon\"\n[sql]\nresult_view = \"x\"\ntable_max_rows = 0\n");
+        let (c, w) = Config::from_toml(
+            "[clipboard]\nbackend = \"pigeon\"\n[editor]\nindent_style = \"mixed\"\n[sql]\nresult_view = \"x\"\ntable_max_rows = 0\n",
+        );
         assert_eq!(c.clipboard.backend, "auto");
         assert_eq!(c.sql.result_view, "split");
         assert_eq!(c.sql.table_max_rows, 25);
-        assert_eq!(w.len(), 3, "{w:?}");
+        assert_eq!(w.len(), 4, "{w:?}");
+        assert_eq!(c.editor.indent_style, "tabs");
     }
 
     #[test]

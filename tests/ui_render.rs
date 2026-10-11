@@ -551,7 +551,7 @@ fn modeless_config_gives_a_vscode_feel() {
     typed(&mut app, "y");
     assert!(text_of(&app).ends_with("xy"), "Esc does not switch to a command mode");
     press(&mut app, "tab");
-    assert!(text_of(&app).ends_with("xy    "), "tab stops at the next multiple of tab_width: {:?}", text_of(&app));
+    assert!(text_of(&app).ends_with("xy\t"), "Tab inserts a hard tab by default: {:?}", text_of(&app));
     press(&mut app, "home home");
     assert_eq!(app.buffer.cursor_line_col().1, 0);
 }
@@ -694,7 +694,7 @@ fn wide_and_tab_characters_keep_the_cursor_aligned() {
     assert_eq!(cur, (gw + 4, 0), "two double-width chars");
     press(&mut app, "down home");
     let cur = app.render(&mut buf, area).unwrap();
-    assert_eq!(cur.0, gw + 4, "after home on '\\tx' the cursor is on the first non-blank (after the 4-wide tab)");
+    assert_eq!(cur.0, gw + 8, "after home on '\\tx' the cursor is on the first non-blank (after the 8-wide tab)");
 }
 
 #[test]
