@@ -54,9 +54,7 @@ pub fn choose_backend(setting: &str, wayland: bool, x11: bool, have: &dyn Fn(&st
 }
 
 fn which(cmd: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|d| d.join(cmd).is_file()))
-        .unwrap_or(false)
+    std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(cmd).is_file())).unwrap_or(false)
 }
 
 pub fn detect(setting: &str) -> Box<dyn Clipboard> {
@@ -106,12 +104,7 @@ impl Clipboard for CommandClipboard {
 
     fn get(&mut self) -> Result<String, String> {
         let (cmd, args) = self.paste_cmd();
-        let out = Command::new(cmd)
-            .args(args)
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .map_err(|e| format!("{cmd}: {e}"))?;
+        let out = Command::new(cmd).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().map_err(|e| format!("{cmd}: {e}"))?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).into_owned())
         } else {

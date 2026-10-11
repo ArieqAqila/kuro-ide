@@ -9,8 +9,8 @@ pub mod profile;
 use crate::table::Column;
 pub use classify::ErrorCategory;
 use profile::{Engine, Resolved};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -260,7 +260,8 @@ mod tests {
 
     #[test]
     fn display_includes_category_position_and_message() {
-        let e = DbError { category: ErrorCategory::Runtime, message: "division by zero".into(), line: Some(1), column: Some(8), code: None };
+        let e =
+            DbError { category: ErrorCategory::Runtime, message: "division by zero".into(), line: Some(1), column: Some(8), code: None };
         assert_eq!(e.to_string(), "runtime error at line 1, col 8: division by zero");
     }
 

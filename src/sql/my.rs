@@ -60,8 +60,12 @@ impl Driver for MyDriver {
         let mut res = self.conn.query_iter(sql).map_err(|e| my_error(&e, sql))?;
         let mut out: Option<ResultSet> = None;
         while let Some(set) = res.iter() {
-            let columns: Vec<Column> =
-                set.columns().as_ref().iter().map(|c| Column { name: c.name_str().to_string(), type_name: type_name(c.column_type()) }).collect();
+            let columns: Vec<Column> = set
+                .columns()
+                .as_ref()
+                .iter()
+                .map(|c| Column { name: c.name_str().to_string(), type_name: type_name(c.column_type()) })
+                .collect();
             let affected = set.affected_rows();
             let mut cur = ResultSet { columns, ..Default::default() };
             if cur.columns.is_empty() {

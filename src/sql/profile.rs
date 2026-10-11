@@ -1,7 +1,7 @@
 //! Connection profiles. Secrets never live in the repo: a profile may only
 //! reference `env:NAME` or `prompt` for the password, literal passwords are rejected.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -11,14 +11,14 @@ pub enum Engine {
     MariaDb,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum PortSpec {
     Num(u16),
     Str(String),
 }
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 pub struct Profile {
     pub driver: String,
     pub host: Option<String>,
@@ -58,6 +58,22 @@ impl std::fmt::Debug for Resolved {
     }
 }
 
+/// Every field a profile accepts (derived from `Profile` itself, used by the docs check).
+pub fn profile_fields() -> Vec<String> {
+    let full = Profile {
+        driver: "postgres".into(),
+        host: Some(String::new()),
+        port: Some(PortSpec::Num(1)),
+        user: Some(String::new()),
+        password: Some(String::new()),
+        database: Some(String::new()),
+    };
+    match toml::Value::try_from(full) {
+        Ok(toml::Value::Table(t)) => t.keys().cloned().collect(),
+        _ => vec![],
+    }
+}
+
 pub fn parse_profiles(text: &str) -> Result<BTreeMap<String, Profile>, String> {
     toml::from_str::<ProfileFile>(text).map(|f| f.profiles).map_err(|e| e.message().to_string())
 }
@@ -65,10 +81,9 @@ pub fn parse_profiles(text: &str) -> Result<BTreeMap<String, Profile>, String> {
 pub fn load_profiles(path: &Path) -> Result<BTreeMap<String, Profile>, String> {
     match std::fs::read_to_string(path) {
         Ok(t) => parse_profiles(&t).map_err(|e| format!("{}: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(format!(
-            "no connection profiles at {} (copy config/default/connections.example.toml there)",
-            path.display()
-        )),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(format!("no connection profiles at {} (copy config/default/connections.example.toml there)", path.display()))
+        }
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }

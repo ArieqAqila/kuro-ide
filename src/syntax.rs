@@ -68,21 +68,138 @@ pub static SQL: LangSpec = LangSpec {
     name: "SQL",
     extensions: &["sql"],
     keywords: &[
-        "select", "from", "where", "and", "or", "not", "insert", "into", "values", "update", "set", "delete",
-        "create", "alter", "drop", "table", "index", "view", "database", "schema", "join", "inner", "left",
-        "right", "full", "outer", "cross", "on", "using", "group", "by", "order", "having", "limit", "offset",
-        "union", "all", "distinct", "as", "in", "is", "like", "ilike", "between", "exists", "case", "when",
-        "then", "else", "end", "with", "recursive", "primary", "key", "foreign", "references", "default",
-        "constraint", "unique", "check", "returning", "begin", "commit", "rollback", "transaction", "grant",
-        "revoke", "truncate", "explain", "analyze", "desc", "asc", "if", "cascade", "temporary", "temp",
-        "over", "partition", "window", "fetch", "next", "only", "rows", "row",
+        "select",
+        "from",
+        "where",
+        "and",
+        "or",
+        "not",
+        "insert",
+        "into",
+        "values",
+        "update",
+        "set",
+        "delete",
+        "create",
+        "alter",
+        "drop",
+        "table",
+        "index",
+        "view",
+        "database",
+        "schema",
+        "join",
+        "inner",
+        "left",
+        "right",
+        "full",
+        "outer",
+        "cross",
+        "on",
+        "using",
+        "group",
+        "by",
+        "order",
+        "having",
+        "limit",
+        "offset",
+        "union",
+        "all",
+        "distinct",
+        "as",
+        "in",
+        "is",
+        "like",
+        "ilike",
+        "between",
+        "exists",
+        "case",
+        "when",
+        "then",
+        "else",
+        "end",
+        "with",
+        "recursive",
+        "primary",
+        "key",
+        "foreign",
+        "references",
+        "default",
+        "constraint",
+        "unique",
+        "check",
+        "returning",
+        "begin",
+        "commit",
+        "rollback",
+        "transaction",
+        "grant",
+        "revoke",
+        "truncate",
+        "explain",
+        "analyze",
+        "desc",
+        "asc",
+        "if",
+        "cascade",
+        "temporary",
+        "temp",
+        "over",
+        "partition",
+        "window",
+        "fetch",
+        "next",
+        "only",
+        "rows",
+        "row",
     ],
     builtins: &[
-        "count", "sum", "avg", "min", "max", "coalesce", "nullif", "now", "length", "lower", "upper", "substr",
-        "substring", "concat", "cast", "round", "floor", "ceil", "abs", "int", "integer", "bigint", "smallint",
-        "serial", "text", "varchar", "char", "boolean", "bool", "date", "time", "timestamp", "timestamptz",
-        "numeric", "decimal", "float", "double", "json", "jsonb", "uuid", "blob", "generate_series", "sleep",
-        "pg_sleep", "row_number", "rank",
+        "count",
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "coalesce",
+        "nullif",
+        "now",
+        "length",
+        "lower",
+        "upper",
+        "substr",
+        "substring",
+        "concat",
+        "cast",
+        "round",
+        "floor",
+        "ceil",
+        "abs",
+        "int",
+        "integer",
+        "bigint",
+        "smallint",
+        "serial",
+        "text",
+        "varchar",
+        "char",
+        "boolean",
+        "bool",
+        "date",
+        "time",
+        "timestamp",
+        "timestamptz",
+        "numeric",
+        "decimal",
+        "float",
+        "double",
+        "json",
+        "jsonb",
+        "uuid",
+        "blob",
+        "generate_series",
+        "sleep",
+        "pg_sleep",
+        "row_number",
+        "rank",
     ],
     literals: &["null", "true", "false"],
     line_comments: &["--"],
@@ -97,15 +214,71 @@ pub static GO: LangSpec = LangSpec {
     extensions: &["go"],
     filenames: &["go.mod"],
     keywords: &[
-        "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough", "for", "func",
-        "go", "goto", "if", "import", "interface", "map", "package", "range", "return", "select", "struct",
-        "switch", "type", "var",
+        "break",
+        "case",
+        "chan",
+        "const",
+        "continue",
+        "default",
+        "defer",
+        "else",
+        "fallthrough",
+        "for",
+        "func",
+        "go",
+        "goto",
+        "if",
+        "import",
+        "interface",
+        "map",
+        "package",
+        "range",
+        "return",
+        "select",
+        "struct",
+        "switch",
+        "type",
+        "var",
     ],
     builtins: &[
-        "append", "cap", "clear", "close", "complex", "copy", "delete", "imag", "len", "make", "max", "min",
-        "new", "panic", "print", "println", "real", "recover", "any", "bool", "byte", "comparable", "error",
-        "float32", "float64", "int", "int8", "int16", "int32", "int64", "rune", "string", "uint", "uint8",
-        "uint16", "uint32", "uint64", "uintptr",
+        "append",
+        "cap",
+        "clear",
+        "close",
+        "complex",
+        "copy",
+        "delete",
+        "imag",
+        "len",
+        "make",
+        "max",
+        "min",
+        "new",
+        "panic",
+        "print",
+        "println",
+        "real",
+        "recover",
+        "any",
+        "bool",
+        "byte",
+        "comparable",
+        "error",
+        "float32",
+        "float64",
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "rune",
+        "string",
+        "uint",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "uintptr",
     ],
     literals: &["true", "false", "nil", "iota"],
     line_comments: &["//"],
@@ -120,14 +293,41 @@ pub static PYTHON: LangSpec = LangSpec {
     extensions: &["py", "pyi", "pyw"],
     shebangs: &["python"],
     keywords: &[
-        "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else",
-        "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not",
-        "or", "pass", "raise", "return", "try", "while", "with", "yield", "match", "case",
+        "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for",
+        "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
+        "yield", "match", "case",
     ],
     builtins: &[
-        "print", "len", "range", "str", "int", "float", "bool", "list", "dict", "set", "tuple", "type",
-        "isinstance", "open", "super", "self", "cls", "enumerate", "zip", "map", "filter", "sorted", "sum",
-        "min", "max", "abs", "any", "all", "repr", "input",
+        "print",
+        "len",
+        "range",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "type",
+        "isinstance",
+        "open",
+        "super",
+        "self",
+        "cls",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "sorted",
+        "sum",
+        "min",
+        "max",
+        "abs",
+        "any",
+        "all",
+        "repr",
+        "input",
     ],
     literals: &["True", "False", "None"],
     line_comments: &["#"],
@@ -142,13 +342,12 @@ pub static SHELL: LangSpec = LangSpec {
     filenames: &[".bashrc", ".zshrc", ".profile", ".bash_profile", "config.fish"],
     shebangs: &["sh", "bash", "zsh", "fish", "ksh"],
     keywords: &[
-        "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "in",
-        "function", "select", "time", "return", "break", "continue", "end", "switch", "begin", "and", "or",
-        "not",
+        "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "function", "select", "time",
+        "return", "break", "continue", "end", "switch", "begin", "and", "or", "not",
     ],
     builtins: &[
-        "echo", "cd", "export", "set", "unset", "local", "read", "exit", "source", "alias", "test", "eval",
-        "exec", "shift", "trap", "printf", "pwd", "type", "command", "true", "false", "declare", "readonly",
+        "echo", "cd", "export", "set", "unset", "local", "read", "exit", "source", "alias", "test", "eval", "exec", "shift", "trap",
+        "printf", "pwd", "type", "command", "true", "false", "declare", "readonly",
     ],
     literals: EMPTY,
     line_comments: &["#"],
@@ -185,7 +384,10 @@ pub fn detect(path: Option<&Path>, first_line: &str) -> &'static LangSpec {
         let interp = words.iter().rev().find(|w| !w.starts_with('-')).copied().unwrap_or("");
         let base = interp.rsplit('/').next().unwrap_or("");
         for l in LANGS {
-            if l.shebangs.iter().any(|s| base == *s || (base.starts_with(s) && base[s.len()..].chars().all(|c| c.is_ascii_digit() || c == '.'))) {
+            if l.shebangs
+                .iter()
+                .any(|s| base == *s || (base.starts_with(s) && base[s.len()..].chars().all(|c| c.is_ascii_digit() || c == '.')))
+            {
                 return l;
             }
         }
@@ -199,7 +401,10 @@ enum State {
     Normal,
     Block,
     /// Inside a multi-line string closed by `quote` (repeated 3x when `triple`).
-    Multi { quote: char, triple: bool },
+    Multi {
+        quote: char,
+        triple: bool,
+    },
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -210,14 +415,7 @@ fn is_ident(c: char) -> bool {
 }
 
 fn starts_with_at(chars: &[char], i: usize, pat: &str) -> bool {
-    let mut j = i;
-    for p in pat.chars() {
-        if chars.get(j) != Some(&p) {
-            return false;
-        }
-        j += 1;
-    }
-    true
+    pat.chars().enumerate().all(|(k, p)| chars.get(i + k) == Some(&p))
 }
 
 fn lookup(spec: &LangSpec, word: &str) -> Kind {
@@ -315,21 +513,21 @@ fn highlight_line(spec: &LangSpec, chars: &[char], kinds: &mut [Kind], mut state
                 return state;
             }
         }
-        if let Some((open, close)) = spec.block_comment {
-            if starts_with_at(chars, i, open) {
-                let start = i;
-                i += open.chars().count();
-                while i < n && !starts_with_at(chars, i, close) {
-                    i += 1;
-                }
-                if i < n {
-                    i += close.chars().count();
-                } else {
-                    state = State::Block;
-                }
-                fill(kinds, start, i.min(n), Kind::Comment);
-                continue;
+        if let Some((open, close)) = spec.block_comment
+            && starts_with_at(chars, i, open)
+        {
+            let start = i;
+            i += open.chars().count();
+            while i < n && !starts_with_at(chars, i, close) {
+                i += 1;
             }
+            if i < n {
+                i += close.chars().count();
+            } else {
+                state = State::Block;
+            }
+            fill(kinds, start, i.min(n), Kind::Comment);
+            continue;
         }
 
         // strings
@@ -402,8 +600,11 @@ fn highlight_line(spec: &LangSpec, chars: &[char], kinds: &mut [Kind], mut state
         {
             let start = i;
             i += 1;
-            while i < n && (chars[i].is_ascii_alphanumeric() || chars[i] == '.' || chars[i] == '_'
-                || ((chars[i] == '+' || chars[i] == '-') && matches!(chars[i - 1], 'e' | 'E')))
+            while i < n
+                && (chars[i].is_ascii_alphanumeric()
+                    || chars[i] == '.'
+                    || chars[i] == '_'
+                    || ((chars[i] == '+' || chars[i] == '-') && matches!(chars[i - 1], 'e' | 'E')))
             {
                 i += 1;
             }
@@ -492,8 +693,8 @@ mod tests {
     #[test]
     fn go_raw_string_spans_lines() {
         let src = "x := `a\nfunc\n` + func";
-        assert_eq!(kind_of(&Go_(), src, 1, "func"), Kind::String);
-        assert_eq!(kind_of(&Go_(), src, 2, "func"), Kind::Keyword);
+        assert_eq!(kind_of(Go_(), src, 1, "func"), Kind::String);
+        assert_eq!(kind_of(Go_(), src, 2, "func"), Kind::Keyword);
     }
 
     #[allow(non_snake_case)]

@@ -110,6 +110,9 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
+/// Environment variables the program reads (documented in docs/CUSTOMIZATION.md).
+pub const ENV_VARS: &[&str] = &["KURO_CONFIG_DIR"];
+
 pub const CLIPBOARD_BACKENDS: &[&str] = &["auto", "wl-clipboard", "xclip", "xsel", "osc52"];
 pub const RESULT_VIEWS: &[&str] = &["split", "tab"];
 
@@ -133,11 +136,7 @@ pub fn option_keys() -> Vec<String> {
     option_defaults().into_keys().collect()
 }
 
-fn section<T: DeserializeOwned + Default>(
-    table: &toml::Table,
-    name: &str,
-    warnings: &mut Vec<String>,
-) -> T {
+fn section<T: DeserializeOwned + Default>(table: &toml::Table, name: &str, warnings: &mut Vec<String>) -> T {
     match table.get(name) {
         None => T::default(),
         Some(v) => match v.clone().try_into::<T>() {
@@ -192,29 +191,19 @@ impl Config {
 
     fn validate(&mut self, warnings: &mut Vec<String>) {
         if !CLIPBOARD_BACKENDS.contains(&self.clipboard.backend.as_str()) {
-            warnings.push(format!(
-                "clipboard.backend = {:?} is not one of {:?}; using \"auto\"",
-                self.clipboard.backend, CLIPBOARD_BACKENDS
-            ));
+            warnings
+                .push(format!("clipboard.backend = {:?} is not one of {:?}; using \"auto\"", self.clipboard.backend, CLIPBOARD_BACKENDS));
             self.clipboard.backend = "auto".into();
         }
         if !RESULT_VIEWS.contains(&self.sql.result_view.as_str()) {
-            warnings.push(format!(
-                "sql.result_view = {:?} is not one of {:?}; using \"split\"",
-                self.sql.result_view, RESULT_VIEWS
-            ));
+            warnings.push(format!("sql.result_view = {:?} is not one of {:?}; using \"split\"", self.sql.result_view, RESULT_VIEWS));
             self.sql.result_view = "split".into();
         }
         let d = Config::default();
         macro_rules! at_least_one {
             ($sec:ident . $key:ident) => {
                 if self.$sec.$key == 0 {
-                    warnings.push(format!(
-                        "{}.{} must be at least 1; using {}",
-                        stringify!($sec),
-                        stringify!($key),
-                        d.$sec.$key
-                    ));
+                    warnings.push(format!("{}.{} must be at least 1; using {}", stringify!($sec), stringify!($key), d.$sec.$key));
                     self.$sec.$key = d.$sec.$key;
                 }
             };
@@ -232,10 +221,7 @@ impl Config {
         match std::fs::read_to_string(path) {
             Ok(text) => Config::from_toml(&text),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Config::default(), vec![]),
-            Err(e) => (
-                Config::default(),
-                vec![format!("cannot read {}: {e}; using defaults", path.display())],
-            ),
+            Err(e) => (Config::default(), vec![format!("cannot read {}: {e}; using defaults", path.display())]),
         }
     }
 }
@@ -258,11 +244,7 @@ pub fn default_config_path() -> PathBuf {
 
 impl SqlConfig {
     pub fn connections_path(&self) -> PathBuf {
-        if self.connections_file.is_empty() {
-            config_dir().join("connections.toml")
-        } else {
-            PathBuf::from(&self.connections_file)
-        }
+        if self.connections_file.is_empty() { config_dir().join("connections.toml") } else { PathBuf::from(&self.connections_file) }
     }
 }
 

@@ -3,10 +3,10 @@
 //! Categories:
 //! * **Syntax**    – the server could not parse the statement.
 //! * **Runtime**   – the statement parsed but failed on data/types
-//!                   (division by zero, bad cast, constraint violation, type mismatch).
+//!   (division by zero, bad cast, constraint violation, type mismatch).
 //! * **Execution** – everything about the environment or objects: missing
-//!                   table/column, permission denied, connection lost,
-//!                   timeout, cancelled. This is also the fallback for unknown codes.
+//!   table/column, permission denied, connection lost,
+//!   timeout, cancelled. This is also the fallback for unknown codes.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCategory {
@@ -63,8 +63,9 @@ pub fn classify_mysql(code: u16, sqlstate: &str) -> ErrorCategory {
         // NULL violation, duplicate key, column count mismatch, out of range, truncated data,
         // incorrect value, division by zero, data too long, FK violations, illegal collation mix,
         // subquery returns >1 row, BIGINT out of range, deadlock
-        1048 | 1062 | 1136 | 1264 | 1265 | 1292 | 1366 | 1365 | 1406 | 1451 | 1452 | 1267 | 1242 | 1690
-        | 1367 | 1525 | 1213 | 4025 => Runtime,
+        1048 | 1062 | 1136 | 1264 | 1265 | 1292 | 1366 | 1365 | 1406 | 1451 | 1452 | 1267 | 1242 | 1690 | 1367 | 1525 | 1213 | 4025 => {
+            Runtime
+        }
         _ => match sqlstate.get(..2) {
             Some("22") | Some("23") => Runtime,
             _ => Execution,

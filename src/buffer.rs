@@ -59,6 +59,7 @@ impl Buffer {
         Self::from_str("")
     }
 
+    #[allow(clippy::should_implement_trait)] // infallible, unlike FromStr
     pub fn from_str(text: &str) -> Self {
         let crlf = text.contains("\r\n");
         let norm = if crlf { text.replace("\r\n", "\n") } else { text.to_string() };
@@ -347,7 +348,13 @@ impl Buffer {
 
     pub fn left(&self, pos: usize) -> usize {
         let (l, c) = self.line_col(pos);
-        if c > 0 { pos - 1 } else if l > 0 { self.line_end(l - 1) } else { 0 }
+        if c > 0 {
+            pos - 1
+        } else if l > 0 {
+            self.line_end(l - 1)
+        } else {
+            0
+        }
     }
 
     pub fn right(&self, pos: usize) -> usize {

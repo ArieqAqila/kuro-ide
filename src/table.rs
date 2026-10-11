@@ -195,14 +195,7 @@ impl TableState {
 }
 
 /// Lay out the visible window of the table.
-pub fn layout(
-    cols: &[Column],
-    rows: &[Vec<String>],
-    opts: &TableOpts,
-    st: &TableState,
-    viewport_w: usize,
-    viewport_h: usize,
-) -> Rendered {
+pub fn layout(cols: &[Column], rows: &[Vec<String>], opts: &TableOpts, st: &TableState, viewport_w: usize, viewport_h: usize) -> Rendered {
     let widths = column_widths(cols, rows, opts, st);
     let vw = visible_width(opts, viewport_w);
     let vrows = visible_row_count(opts, viewport_h);
@@ -217,15 +210,7 @@ pub fn layout(
         .iter()
         .skip(st.row_off)
         .take(vrows)
-        .map(|r| {
-            join(
-                widths
-                    .iter()
-                    .enumerate()
-                    .map(|(i, w)| fit(&sanitize(r.get(i).map(String::as_str).unwrap_or("")), *w))
-                    .collect(),
-            )
-        })
+        .map(|r| join(widths.iter().enumerate().map(|(i, w)| fit(&sanitize(r.get(i).map(String::as_str).unwrap_or("")), *w)).collect()))
         .collect();
 
     Rendered {
@@ -314,7 +299,7 @@ mod tests {
         let r = layout(&[col("n", "")], &rows(&[&["42"]]), &opts(), &TableState::default(), 80, 10);
         assert_eq!(r.rows.len(), 1);
         assert!(r.rows[0].starts_with("42"));
-        assert_eq!(r.total_w, 2.max(1));
+        assert_eq!(r.total_w, 2);
     }
 
     #[test]
