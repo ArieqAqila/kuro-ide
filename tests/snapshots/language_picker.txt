@@ -9,9 +9,9 @@
 | │ Python  .py .pyi .pyw                                      │ |
 | │ Shell  .sh .bash .zsh .fish .ksh                           │ |
 | │ JSON  .json .jsonc .geojson                                │ |
+| │ Lua  .lua .rockspec                                        │ |
 | │                                                            │ |
 | ╰────────────────────────────────────────────────────────────╯ |
-|                                                                |
 |                                                                |
 |NORMAL  [No Name]                    Ln 1, Col 1  │  Plain Text |
 |                                                                |
