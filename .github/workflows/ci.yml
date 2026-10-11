@@ -1,0 +1,29 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Docker is available on GitHub runners: a missing daemon must fail, not silently skip
+      KURO_REQUIRE_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Pre-pull database images
+        run: |
+          docker pull postgres:16-alpine
+          docker pull mariadb:11
+      - name: Format
+        run: cargo fmt --check
+      - name: Unit tests
+        run: make test-unit
+      - name: UI tests (cell buffer + pty)
+        run: make test-ui
+      - name: Integration tests (MariaDB + PostgreSQL in Docker)
+        run: make test-integration
