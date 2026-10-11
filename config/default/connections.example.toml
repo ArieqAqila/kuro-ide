@@ -1,0 +1,22 @@
+# Copy this file to  ~/.config/kuro/connections.toml  (that path is gitignored when
+# inside the repo, and never committed).  Use :sql connect <profile-name>.
+#
+# Values may be literals or "env:VARNAME". The password may ONLY be "env:VARNAME"
+# or "prompt" (asked for, hidden, when you connect). Literal passwords are rejected.
+# Supported drivers: "postgres", "mariadb".
+
+[profiles.local_pg]
+driver   = "postgres"
+host     = "127.0.0.1"
+port     = 5432
+user     = "env:PGUSER"
+password = "env:PGPASSWORD"
+database = "postgres"
+
+[profiles.local_maria]
+driver   = "mariadb"
+host     = "127.0.0.1"
+port     = 3306
+user     = "root"
+password = "prompt"
+database = "test"

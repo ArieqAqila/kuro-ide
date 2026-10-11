@@ -1,0 +1,34 @@
+# Error messages recorded from real servers (postgres:16-alpine, mariadb:11) by
+# tests/integration_sql.rs with KURO_RECORD_FIXTURES set.
+# Format: engine|code|expected category|message     (code = SQLSTATE for postgres, vendor code for mariadb)
+mariadb|1045|execution|Access denied for user 'root'@'172.17.0.1' (using password: YES)
+mariadb|1048|runtime|Column 'n' cannot be null
+mariadb|1054|execution|Unknown column 'nope' in 'SELECT'
+mariadb|1062|runtime|Duplicate entry '1' for key 'PRIMARY'
+mariadb|1064|syntax|You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELEC 1' at line 1
+mariadb|1064|syntax|You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'FROM WHERE' at line 1
+mariadb|1142|execution|SELECT command denied to user 'limited'@'172.17.0.1' for table `test`.`t`
+mariadb|1146|execution|Table 'test.no_such_table' doesn't exist
+mariadb|1317|execution|Query execution was interrupted
+mariadb|1366|runtime|Incorrect integer value: 'abc' for column `test`.`t`.`id` at row 1
+mariadb||execution|connection lost: IoError { server disconnected }
+postgres|22012|runtime|division by zero
+postgres|22P02|runtime|invalid input syntax for type integer: "abc"
+postgres|22P02|runtime|invalid input syntax for type integer: "x"
+postgres|23505|runtime|duplicate key value violates unique constraint "t_pkey"
+postgres|28P01|execution|password authentication failed for user "postgres"
+postgres|42501|execution|permission denied for table secret
+postgres|42601|syntax|syntax error at or near "SELEC"
+postgres|42601|syntax|syntax error at or near "WHERE"
+postgres|42703|execution|column "nope" does not exist
+postgres|42P01|execution|relation "no_such_table" does not exist
+postgres|57014|execution|canceling statement due to user request
+postgres||execution|connection lost: connection closed
+# hand-written entries for conditions that are awkward to provoke in CI
+postgres|08006|execution|connection failure
+postgres|42883|runtime|operator does not exist: integer = text
+postgres|42804|runtime|column "n" is of type integer but expression is of type text
+mariadb|1205|execution|Lock wait timeout exceeded; try restarting transaction
+mariadb|2006|execution|MySQL server has gone away
+mariadb|1969|execution|Query execution was interrupted (max_statement_time exceeded)
+mariadb|1267|runtime|Illegal mix of collations (utf8mb4_general_ci,IMPLICIT) and (latin1_swedish_ci,IMPLICIT) for operation '='
