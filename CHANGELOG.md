@@ -5,6 +5,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Horizontal scrolling with the mouse: the terminal's horizontal wheel (buttons 6/7 in SGR, X10 and urxvt reporting)
+  and Shift + vertical wheel scroll the view sideways, clamped between the start and the end of the longest line
+  (before, the view could be scrolled past the text). X10 and urxvt mouse reports are now parsed. Tests:
+  `tests/ui_hscroll.rs` and the input parser tests.
 - Ctrl + right-click on spaces or tabs moves the cursor to the end of that whitespace run (mixed tabs and spaces are
   one run); the rule is in `docs/KEYBINDINGS.md`. Tests: `tests/ui_ctrl_rightclick.rs`.
 - Mouse selection (drag) now extends to the true end of the line, including trailing spaces and tabs, in every mode,

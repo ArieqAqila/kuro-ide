@@ -18,6 +18,23 @@ Letters in tables are case-sensitive in Normal mode (`G` is Shift+g). Configurab
   Ctrl+right-click action (Ctrl+click is go-to-definition; its double-click on whitespace selects the whole run, and
   Ctrl+→ steps over it), so this follows the task's wording and VS Code's idea of a whitespace run.
 
+## Horizontal scrolling with the mouse
+
+kuro understands every common way a terminal reports a sideways wheel:
+
+| What the terminal sends | Reporting mode | Handled |
+|---|---|---|
+| wheel buttons **6 / 7** (left / right) | SGR (`CSI < 66;x;y M`, `CSI < 67;x;y M`), the mode kuro asks for | yes |
+| the same buttons | X10 / normal (`CSI M` + 3 bytes) and urxvt (`CSI 98;x;y M`) | yes |
+| Shift + **vertical** wheel (button 4 / 5 with the shift bit) | any of the above | yes, as the fallback |
+
+The view stops at the start of the text and at the end of the widest line (tabs counted at their display width).
+Which terminals send which form depends on the terminal, the mouse or trackpad and the platform, and was **not
+verified per terminal here** (see `docs/TESTING.md`): trackpads and tilt wheels normally produce 6/7 where the terminal
+supports them; if yours only sends vertical wheel events, Shift+wheel works unless the terminal keeps Shift for its
+own use (many terminals use Shift to bypass mouse reporting, which then never reaches kuro). `kuro` itself cannot
+tell which case you are in; try both.
+
 ## Which terminals can send Ctrl+Enter
 
 Most terminals send the very same byte for **Enter** and **Ctrl+Enter** (a carriage return), so no program can tell
@@ -236,7 +253,8 @@ since kuro's startup check is the authority. Without the protocol:
 | `Double-click` | Select the word |
 | `Triple-click` | Select the line |
 | `Click the line number` | Select the whole line |
-| `Wheel` | Scroll (Shift+wheel: sideways) |
+| `Wheel` | Scroll up / down |
+| `Horizontal wheel or Shift+wheel` | Scroll sideways, between the start and the end of the longest line |
 | `Click find-bar buttons` | Aa / ab / .* toggles, ↑ ↓, ✕, ↵ replace, ⇉ replace all |
 | `Wheel over the table` | Scroll rows (Shift+wheel: columns) |
 | `Click / double-click a column header` | Select / expand the column |

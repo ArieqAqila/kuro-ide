@@ -1573,6 +1573,20 @@ fn mouse_probes() -> Vec<(&'static str, Probe)> {
             }),
         ),
         (
+            "m_hwheel",
+            p(|| {
+                let mut a = modal(&"x".repeat(200));
+                render(&mut a);
+                mouse(&mut a, K::ScrollRight, 10, 0);
+                let one = a.left_col;
+                assert!(one > 0);
+                mouse(&mut a, K::ScrollLeft, 10, 0);
+                assert_eq!(a.left_col, 0);
+                mouse_mod(&mut a, K::ScrollDown, 10, 0, KeyModifiers::SHIFT);
+                assert_eq!(a.left_col, one, "Shift+wheel is the fallback");
+            }),
+        ),
+        (
             "m_wheel",
             p(|| {
                 let mut a = modal(&many_lines());

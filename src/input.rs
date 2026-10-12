@@ -258,6 +258,15 @@ impl InputParser {
             return Parsed::Done(2, vec![]);
         }
         let len = i + 1;
+        // X10 / normal mouse report: `CSI M` followed by three raw bytes (button, column, row; each + 32)
+        if fin == b'M' && params_end == 2 {
+            if self.buf.len() < len + 3 {
+                return Parsed::Incomplete;
+            }
+            let (cb, cx, cy) = (self.buf[len], self.buf[len + 1], self.buf[len + 2]);
+            let ev = legacy_mouse(cb as u32, (cx as u16).saturating_sub(32), (cy as u16).saturating_sub(32));
+            return Parsed::Done(len + 3, ev.into_iter().collect());
+        }
         let params = String::from_utf8_lossy(&self.buf[2..params_end]).into_owned();
         let has_intermediate = params_end != i;
         if has_intermediate {
@@ -271,6 +280,14 @@ impl InputParser {
         if let Some(rest) = params.strip_prefix('<') {
             if fin == b'M' || fin == b'm' {
                 return sgr_mouse(rest, fin == b'm').into_iter().collect();
+            }
+            return vec![];
+        }
+        // urxvt mouse (1015): CSI Cb ; Cx ; Cy M
+        if fin == b'M' {
+            let nums: Vec<u32> = params.split(';').filter_map(|n| n.parse().ok()).collect();
+            if let [cb, x, y] = nums[..] {
+                return legacy_mouse(cb, x as u16, y as u16).into_iter().collect();
             }
             return vec![];
         }
@@ -347,7 +364,23 @@ fn sgr_mouse(rest: &str, release: bool) -> Option<InputEvent> {
     let b: u32 = it.next()?.parse().ok()?;
     let x: u16 = it.next()?.parse().ok()?;
     let y: u16 = it.next()?.parse().ok()?;
-    if it.next().is_some() || x == 0 || y == 0 {
+    if it.next().is_some() {
+        return None;
+    }
+    decode_mouse(b, x, y, release)
+}
+
+/// The older mouse encodings, which carry the release as button number 3 instead of a final `m`:
+/// X10 / normal `CSI M Cb Cx Cy` (three raw bytes, each offset by 32) and urxvt `CSI Cb ; Cx ; Cy M` (decimal, Cb offset by 32).
+fn legacy_mouse(cb: u32, x: u16, y: u16) -> Option<InputEvent> {
+    let b = cb.checked_sub(32)?;
+    let release = b & 3 == 3 && b & 64 == 0;
+    // a release does not say which button it was: report the left one
+    decode_mouse(if release { b & !3 } else { b }, x, y, release)
+}
+
+fn decode_mouse(b: u32, x: u16, y: u16, release: bool) -> Option<InputEvent> {
+    if x == 0 || y == 0 {
         return None;
     }
     let mut mods = KeyModifiers::NONE;
@@ -656,6 +689,49 @@ mod tests {
         assert_eq!((m.kind, m.modifiers), (MouseEventKind::Down(MouseButton::Left), C));
         let m = mouse(b"\x1b[<28;4;4M"); // shift+alt+ctrl (4+8+16)
         assert_eq!(m.modifiers, S | A | C);
+    }
+
+    /// X10 / normal reporting: `CSI M` and three bytes, each 32 + value (column and row are 1-based).
+    fn x10(button: u8, x: u8, y: u8) -> Vec<u8> {
+        vec![0x1b, b'[', b'M', 32 + button, 32 + x, 32 + y]
+    }
+
+    #[test]
+    fn horizontal_wheel_in_x10_and_urxvt_reporting() {
+        // buttons 6 and 7 are 64 + 2 and 64 + 3
+        let m = mouse(&x10(66, 5, 3));
+        assert_eq!((m.kind, m.column, m.row), (MouseEventKind::ScrollLeft, 4, 2));
+        assert_eq!(mouse(&x10(67, 1, 1)).kind, MouseEventKind::ScrollRight);
+        assert_eq!(mouse(&x10(64, 1, 1)).kind, MouseEventKind::ScrollUp);
+        assert_eq!(mouse(&x10(65, 1, 1)).kind, MouseEventKind::ScrollDown);
+        assert_eq!(mouse(&x10(67 + 4, 1, 1)).modifiers, S, "shift is bit 4 here too");
+        // urxvt (1015): decimal, button offset by 32
+        assert_eq!(mouse(b"\x1b[98;5;3M").kind, MouseEventKind::ScrollLeft);
+        assert_eq!(mouse(b"\x1b[99;5;3M").kind, MouseEventKind::ScrollRight);
+    }
+
+    #[test]
+    fn x10_clicks_drags_and_releases() {
+        assert_eq!(mouse(&x10(0, 3, 4)).kind, MouseEventKind::Down(MouseButton::Left));
+        assert_eq!(mouse(&x10(2, 3, 4)).kind, MouseEventKind::Down(MouseButton::Right));
+        assert_eq!(mouse(&x10(3, 3, 4)).kind, MouseEventKind::Up(MouseButton::Left), "button 3 is a release");
+        assert_eq!(mouse(&x10(32, 3, 4)).kind, MouseEventKind::Drag(MouseButton::Left));
+        assert_eq!(mouse(&x10(16, 3, 4)).modifiers, C);
+        // urxvt press: button 0 + 32 = 32
+        assert_eq!(mouse(b"\x1b[32;3;4M").kind, MouseEventKind::Down(MouseButton::Left));
+    }
+
+    #[test]
+    fn an_x10_report_split_across_reads_is_reassembled_and_never_partial() {
+        let bytes = x10(67, 10, 10);
+        for cut in 1..bytes.len() {
+            let mut p = InputParser::new();
+            let first = p.feed(&bytes[..cut]);
+            assert!(first.is_empty(), "a strict prefix gives nothing: {first:?}");
+            let rest = p.feed(&bytes[cut..]);
+            assert_eq!(rest.len(), 1);
+            assert!(matches!(&rest[0], InputEvent::Mouse(m) if m.kind == MouseEventKind::ScrollRight));
+        }
     }
 
     #[test]

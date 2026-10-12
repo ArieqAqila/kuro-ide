@@ -135,6 +135,8 @@ pub struct App {
     pub clip: Box<dyn Clipboard>,
     pub top_line: usize,
     pub left_col: usize,
+    /// Widest line in cells, cached per (buffer id, version, tab width).
+    widest: std::cell::Cell<Option<(u64, u64, usize, usize)>>,
     pub follow: bool,
     pub msg: Option<String>,
     pub register: Option<(String, bool)>,
@@ -270,6 +272,7 @@ impl App {
             clip,
             top_line: 0,
             left_col: 0,
+            widest: std::cell::Cell::new(None),
             follow: true,
             msg: None,
             register: None,
@@ -2589,21 +2592,16 @@ impl App {
                 self.drag_origin = None;
                 self.clamp_normal();
             }
+            // Shift + wheel is the fallback for terminals (or mice) that only send vertical wheel events
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if shift => {
-                let d = self.cfg.editor.scroll_lines * 2;
-                self.left_col = if m.kind == MouseEventKind::ScrollDown { self.left_col + d } else { self.left_col.saturating_sub(d) };
-                self.follow = false;
+                let d = (self.cfg.editor.scroll_lines * 2) as isize;
+                self.scroll_cols(if m.kind == MouseEventKind::ScrollDown { d } else { -d });
             }
             MouseEventKind::ScrollDown => self.scroll_text(self.cfg.editor.scroll_lines as isize),
             MouseEventKind::ScrollUp => self.scroll_text(-(self.cfg.editor.scroll_lines as isize)),
-            MouseEventKind::ScrollRight => {
-                self.left_col += self.cfg.editor.scroll_lines * 2;
-                self.follow = false;
-            }
-            MouseEventKind::ScrollLeft => {
-                self.left_col = self.left_col.saturating_sub(self.cfg.editor.scroll_lines * 2);
-                self.follow = false;
-            }
+            // the terminal's own horizontal wheel (buttons 6 and 7)
+            MouseEventKind::ScrollRight => self.scroll_cols((self.cfg.editor.scroll_lines * 2) as isize),
+            MouseEventKind::ScrollLeft => self.scroll_cols(-((self.cfg.editor.scroll_lines * 2) as isize)),
             MouseEventKind::Down(MouseButton::Left) => {
                 self.focus = Focus::Editor;
                 self.follow = true;
@@ -2657,6 +2655,34 @@ impl App {
             MouseEventKind::Up(MouseButton::Left) => {}
             _ => {}
         }
+    }
+
+    /// Width in cells of the widest line (tabs expanded).
+    pub fn widest_line(&self) -> usize {
+        let tab = self.cfg.editor.tab_width.max(1);
+        let key = (self.buffer.id, self.buffer.version, tab);
+        if let Some((a, b, c, w)) = self.widest.get()
+            && (a, b, c) == key
+        {
+            return w;
+        }
+        let w = (0..self.buffer.line_count()).map(|l| self.buffer.line_cells(l, tab)).max().unwrap_or(0);
+        self.widest.set(Some((key.0, key.1, key.2, w)));
+        w
+    }
+
+    /// The furthest the view can scroll right: the end of the widest line at the right edge of the text.
+    pub fn max_left_col(&self) -> usize {
+        let l = self.layout(self.area);
+        let avail = l.text.width.saturating_sub(l.gutter_w) as usize;
+        self.widest_line().saturating_sub(avail)
+    }
+
+    /// Scroll the view sideways by `d` cells, staying between the start and the end of the longest line.
+    pub fn scroll_cols(&mut self, d: isize) {
+        let max = self.max_left_col() as isize;
+        self.left_col = (self.left_col as isize + d).clamp(0, max.max(0)) as usize;
+        self.follow = false;
     }
 
     fn scroll_text(&mut self, d: isize) {

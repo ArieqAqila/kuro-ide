@@ -90,7 +90,7 @@ or if a documented default differs from the real one. Headings below are the key
 ### `editor.scroll_lines`
 - **Type:** integer ≥ 1
 - **Default:** `3`
-- Lines moved per mouse-wheel notch in the editor.
+- Lines moved per mouse-wheel notch in the editor. A horizontal notch moves twice as many cells.
 - **Example:** `scroll_lines = 5`
 
 ## `[clipboard]`

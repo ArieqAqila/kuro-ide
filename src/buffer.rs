@@ -21,6 +21,8 @@ struct Group {
 
 #[derive(Debug)]
 pub struct Buffer {
+    /// Unique per buffer instance (caches keyed on a buffer use it together with `version`).
+    pub id: u64,
     rope: Rope,
     pub cursor: usize,
     pub anchor: Option<usize>,
@@ -87,7 +89,9 @@ impl Buffer {
     pub fn from_str(text: &str) -> Self {
         let crlf = text.contains("\r\n");
         let norm = if crlf { text.replace("\r\n", "\n") } else { text.to_string() };
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Buffer {
+            id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             rope: Rope::from_str(&norm),
             cursor: 0,
             anchor: None,
@@ -263,6 +267,15 @@ impl Buffer {
             x += w;
         }
         self.line_end(l)
+    }
+
+    /// Width of line `l` in display cells.
+    pub fn line_cells(&self, l: usize, tab: usize) -> usize {
+        let mut x = 0;
+        for ch in self.line(l).chars() {
+            x += cell_width(ch, x, tab);
+        }
+        x
     }
 
     /// Remember where the cursor is as the column for vertical motion (call after every horizontal move or edit).
