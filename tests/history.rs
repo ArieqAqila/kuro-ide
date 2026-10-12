@@ -511,3 +511,37 @@ fn crc32_matches_the_standard_check_value() {
     assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
     assert_eq!(crc32(b""), 0);
 }
+
+#[test]
+fn regression_two_threads_saving_one_file_never_collide_on_the_temporary_file() {
+    // the temporary file used to be named after the process only, so two writers in one process raced for it
+    let e = env();
+    let p = e.put("shared.txt", b"start\n");
+    let mut handles = vec![];
+    for t in 0..6 {
+        let p = p.clone();
+        handles.push(std::thread::spawn(move || {
+            let mut sync_fs = kuro::sync::real::RealFs;
+            for i in 0..30 {
+                let bytes = format!("t{t} i{i}\n");
+                if i % 2 == 0 {
+                    sync_fs.write_atomic(&p, bytes.as_bytes()).unwrap();
+                } else {
+                    kuro::history::write_atomic(&p, bytes.as_bytes()).unwrap();
+                }
+            }
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    let text = fs::read_to_string(&p).unwrap();
+    assert!(text.starts_with('t') && text.ends_with('\n') && text.lines().count() == 1, "a whole write, never a mix: {text:?}");
+    let leftovers: Vec<_> = fs::read_dir(p.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .map(|d| d.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains("kuro-tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}

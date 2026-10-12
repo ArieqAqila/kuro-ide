@@ -28,28 +28,7 @@ impl Fs for RealFs {
     /// Write to a temporary file in the same directory, flush it to disk, then rename it over the original, so
     /// a crash leaves either the old complete file or the new complete file. The original's permissions are kept.
     fn write_atomic(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        let name = path.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-        let tmp = dir.join(format!(".{}.kuro-tmp-{}", name.to_string_lossy(), std::process::id()));
-        let result = (|| {
-            let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&tmp)?;
-            if let Ok(meta) = fs::metadata(path) {
-                let _ = f.set_permissions(meta.permissions());
-            }
-            f.write_all(bytes)?;
-            f.sync_all()?;
-            drop(f);
-            fs::rename(&tmp, path)?;
-            // make the rename itself durable
-            if let Ok(d) = File::open(dir) {
-                let _ = d.sync_all();
-            }
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&tmp);
-        }
-        result
+        crate::history::write_atomic(path, bytes)
     }
 }
 

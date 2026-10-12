@@ -558,7 +558,14 @@ impl PlanItem {
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let name = path.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-    let tmp = dir.join(format!(".{}.kuro-tmp-{}", name.to_string_lossy(), std::process::id()));
+    // unique per call, not only per process: two threads may save the same file
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        ".{}.kuro-tmp-{}-{}",
+        name.to_string_lossy(),
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let result = (|| {
         let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&tmp)?;
         if let Ok(meta) = fs::metadata(path) {
