@@ -489,3 +489,90 @@ fn replica_and_leader_text_agree_on_wide_characters() {
     c.run_until_idle();
     c.assert_converged();
 }
+
+// ---------------------------------------------------------------------------------------------------- discard (hard undo of unsaved edits)
+
+#[test]
+fn discard_gives_every_terminal_the_file_on_disk_and_marks_it_saved() {
+    let initial = "the quick brown fox\njumps over\n";
+    let mut c = cluster_of(3, 7, initial);
+    c.insert(1, 4, "AAA");
+    c.insert(2, 0, "BBB");
+    c.run_until_idle();
+    c.insert(3, 10, "CCC");
+    c.run_until_idle();
+    assert_ne!(c.assert_converged(), initial);
+    c.discard(2);
+    c.run_until_idle();
+    assert_eq!(c.assert_converged(), initial, "every terminal shows the file on disk again");
+    assert_eq!(c.fs.read_string(kuro::sync::cluster::PATH).as_deref(), Some(initial), "nothing was written");
+    for id in [1, 2, 3] {
+        assert!(c.members[&id].saved_events > 0, "terminal {id} was told the text is saved");
+    }
+    assert!(!c.leader().unwrap().leader.as_ref().unwrap().is_dirty());
+}
+
+#[test]
+fn discard_also_forgets_the_shared_undo_history_and_the_journal() {
+    let mut c = cluster_of(2, 3, "base\n");
+    c.insert(1, 0, "x");
+    c.run_until_idle();
+    c.discard(1);
+    c.run_until_idle();
+    c.undo(1); // nothing left to undo: it must not bring the discarded edit back
+    c.run_until_idle();
+    assert_eq!(c.assert_converged(), "base\n");
+    // after the discard a restarted session finds nothing to recover
+    for id in c.alive() {
+        c.kill(id);
+    }
+    c.start_leader(1);
+    c.run_until_idle();
+    assert_eq!(c.assert_converged(), "base\n");
+    assert!(c.members[&1].notices.iter().all(|n| !n.contains("recovered")), "{:?}", c.members[&1].notices);
+}
+
+#[test]
+fn an_edit_racing_with_a_discard_is_either_discarded_with_the_rest_or_kept_and_all_terminals_agree() {
+    // The leader orders the two: an edit committed before the discard is discarded with everything else, one that
+    // arrives after it is a new edit and stays. Both are right; disagreeing terminals or a half-kept edit are not.
+    let (mut kept, mut dropped) = (0, 0);
+    for seed in 0..60 {
+        let mut c = cluster_of(3, seed, "one\ntwo\n");
+        c.insert(1, 0, "old ");
+        c.run_until_idle();
+        c.discard(2);
+        c.insert(3, 4, "NEW"); // typed before the discard reaches terminal 3
+        c.run_until_idle();
+        let text = c.assert_converged();
+        assert!(!text.contains("old "), "seed {seed}: the discarded edit is gone: {text:?}");
+        match text.matches("NEW").count() {
+            0 => {
+                assert_eq!(text, "one\ntwo\n", "seed {seed}");
+                dropped += 1;
+            }
+            1 => kept += 1,
+            _ => panic!("seed {seed}: NEW duplicated: {text:?}"),
+        }
+    }
+    assert!(kept > 0 && dropped > 0, "the schedule explores both orders (kept {kept}, dropped {dropped})");
+}
+
+#[test]
+fn discard_with_nothing_to_discard_changes_no_text() {
+    let mut c = cluster_of(2, 1, "same\n");
+    c.discard(2);
+    c.run_until_idle();
+    assert_eq!(c.assert_converged(), "same\n");
+}
+
+#[test]
+fn discard_reloads_a_file_that_changed_on_disk_in_the_meantime() {
+    let mut c = cluster_of(2, 1, "v1\n");
+    c.insert(1, 0, "unsaved ");
+    c.run_until_idle();
+    c.fs.external_write(std::path::Path::new(kuro::sync::cluster::PATH), b"v2 from another editor\n");
+    c.discard(1);
+    c.run_until_idle();
+    assert_eq!(c.assert_converged(), "v2 from another editor\n");
+}

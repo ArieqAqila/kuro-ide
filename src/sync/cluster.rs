@@ -208,6 +208,10 @@ impl Cluster {
         self.edit(id, vec![Op::Mark]);
     }
 
+    pub fn discard(&mut self, id: ClientId) {
+        self.input(id, Input::LocalDiscard);
+    }
+
     pub fn undo(&mut self, id: ClientId) {
         self.input(id, Input::LocalUndo);
     }

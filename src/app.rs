@@ -146,6 +146,8 @@ pub struct HardUndo {
     /// 1: restore these files? 2: some were changed outside kuro: overwrite those as well?
     pub stage: u8,
     pub note: Option<String>,
+    /// The buffer has unsaved edits (also those recovered from an earlier session): they are thrown away in every terminal.
+    pub discard: bool,
 }
 
 pub struct App {
@@ -2108,17 +2110,17 @@ impl App {
             "all" => store.plan(None),
             other => return self.flash(format!("usage: :hardundo   or   :hardundo all   (not `{other}`)")),
         };
-        if items.is_empty() {
+        // unsaved edits are part of what hard undo takes back (they may have been recovered from an earlier session)
+        let discard = self.buffer.path.is_some() && self.buffer.is_modified();
+        if items.is_empty() && !discard {
             return self.flash(if arg.is_empty() {
-                "nothing to undo: kuro has not changed this file (or it is already the original)"
+                "nothing to undo: no unsaved edits, and kuro has not saved a change to this file (or it is already the original)"
             } else {
                 "nothing to undo in any file"
             });
         }
-        let current = self.buffer.path.as_ref().map(|p| p.display().to_string());
-        let note = (self.buffer.is_modified() && items.iter().any(|i| Some(&i.entry.path) == current.as_ref()))
-            .then(|| "unsaved changes in this buffer are discarded".to_string());
-        self.hardundo = Some(HardUndo { items, stage: 1, note });
+        let note = discard.then(|| "unsaved edits in this buffer are discarded, in every terminal that has this file open".to_string());
+        self.hardundo = Some(HardUndo { items, stage: 1, note, discard });
         self.focus = Focus::HardUndo;
     }
 
@@ -2146,7 +2148,7 @@ impl App {
                 if let Some(h) = &mut self.hardundo {
                     h.stage = 2;
                 }
-            } else if self.hardundo.as_ref().is_some_and(|h| h.items.is_empty()) {
+            } else if self.hardundo.as_ref().is_some_and(|h| h.items.is_empty() && !h.discard) {
                 self.hardundo = None;
                 self.focus = Focus::Editor;
                 self.flash("nothing to undo any more");
@@ -2179,9 +2181,23 @@ impl App {
                 Err(e) => failed.push(e),
             }
         }
+        // unsaved edits go last, so the text ends up equal to the file as it now is on disk
+        let mut discarded = false;
+        if h.discard {
+            discarded = true;
+            if self.sync.is_some() {
+                self.sync_pump();
+                if let Some(s) = self.sync.as_mut() {
+                    s.discard();
+                }
+                self.sync_pump();
+                self.leave_visual();
+                self.clamp_normal();
+            }
+        }
         // the buffer of a restored file shows the restored text (a live-sync group reloads it by itself)
         if let Some(p) = self.buffer.path.clone()
-            && done.iter().any(|d| std::path::Path::new(d) == crate::history::real_path(&p))
+            && (discarded || done.iter().any(|d| std::path::Path::new(d) == crate::history::real_path(&p)))
             && !self.buffer.synced
         {
             let text = std::fs::read(&p).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
@@ -2192,6 +2208,9 @@ impl App {
             self.syn = None;
         }
         let mut msg = format!("hard undo: {} file{} restored", done.len(), if done.len() == 1 { "" } else { "s" });
+        if discarded {
+            msg.push_str(", unsaved edits discarded");
+        }
         if skipped > 0 {
             msg.push_str(&format!(", {skipped} skipped (changed outside kuro)"));
         }

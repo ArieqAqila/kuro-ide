@@ -28,6 +28,8 @@ pub enum Input {
     Local(Vec<Op>),
     LocalUndo,
     LocalRedo,
+    /// Throw away all unsaved edits of the group (the text becomes the file on disk).
+    LocalDiscard,
     LocalSave {
         force: bool,
     },
@@ -179,6 +181,13 @@ impl Node {
                     return vec![Output::Editor(Effect::Notice("sync is re-connecting: try again in a moment".into()))];
                 }
                 let e = if input == Input::LocalUndo { self.replica.request_undo() } else { self.replica.request_redo() };
+                self.effects(vec![e])
+            }
+            Input::LocalDiscard => {
+                if self.state != State::Live {
+                    return vec![Output::Editor(Effect::Notice("sync is re-connecting: try again in a moment".into()))];
+                }
+                let e = self.replica.request_discard();
                 self.effects(vec![e])
             }
             Input::LocalSave { force } => match self.state {

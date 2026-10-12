@@ -6,6 +6,13 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 
 ## [Unreleased]
 
+### Fixed
+- `:hardundo` said "nothing to undo: kuro has not changed this file" when the edits were never saved (for example the `recovered N unsaved edits from the last
+  session` case): hard undo only knew about writes to the file. It now also throws away every unsaved edit: a new `Discard` message makes the sync leader replace
+  the shared text with the file on disk as one edit for all terminals, mark it saved, and empty the undo history and the recovery journal (nothing is written to
+  the file). One popup covers saved changes and unsaved edits. A terminal that types at the same moment keeps that new edit or loses it with the rest depending on the
+  order the leader commits them; all terminals always agree. Tests: `tests/sync_sim.rs` (discard_*), `tests/ui_sync.rs` (hardundo_*), `tests/ui_hardundo.rs`.
+
 ## [0.2.0]
 
 Major update: version raised from 0.1.0 to 0.2.0. It adds the extension system (`kuro ext`), `kuro git`, hard undo

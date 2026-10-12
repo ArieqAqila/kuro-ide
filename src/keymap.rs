@@ -155,7 +155,7 @@ pub const BINDINGS: &[Binding] = &[
         "c_hardundo",
         ":hardundo [all]",
         "Command line",
-        "Put this file (or every recorded file) back as it was before kuro first wrote it; asks first, and again for files changed outside kuro",
+        "Put this file (or every recorded file) back as it was before kuro first wrote it, and discard unsaved edits in every terminal; asks first, and again for files changed outside kuro",
     ),
     b("c_setlang", ":setlang [mode]", "Command line", "Set the language mode (picker without an argument; `auto` to detect)"),
     b("c_snippets", ":snippets", "Command line", "Open the SQL snippet picker"),

@@ -2,6 +2,10 @@
 
 `:hardundo` puts a file back **as it was before kuro first wrote it**: the original, unedited file. It works after every kuro terminal was closed, after kuro was
 killed, and for edits made in several terminals (a file shown in ten terminals has one history, and one hard undo takes all of their saves back at once).
+**Unsaved edits are part of it:** `:hardundo` also throws away every edit that has not been saved yet, in **all** terminals that have the file open,
+including edits kuro recovered from an earlier session (`recovered N unsaved edits from the last session`). The text becomes the file on disk again, the
+recovery journal is emptied, and `Ctrl+Z` does not bring the edits back. If nothing was ever saved by kuro, that is all `:hardundo` does and the popup says
+`Hard undo: discard all unsaved edits?`; nothing is written to the file. If both exist, one popup restores the saved changes and discards the unsaved ones.
 It is separate from `Ctrl+Z`, which undoes edits step by step inside the editor and is forgotten when kuro closes.
 
 ```text
@@ -36,7 +40,7 @@ kuro history clear                 # delete everything (asks; `--yes` skips the 
   the moment of restoring, so a file that changes while a popup is open is never overwritten without being asked.
 * A file kuro **created** (it did not exist before) is **deleted** by a hard undo; the popup says so.
 * A file that no longer exists is recreated (after the questions).
-* This terminal's buffer shows the restored file (unsaved changes in it are discarded: the popup says so). Other terminals on the same file are reloaded by live sync
+* This terminal's buffer shows the restored file (unsaved changes in it, and in every other terminal on the file, are discarded: the popup says so). Other terminals on the same file are reloaded by live sync
   like for any outside change (a terminal with unsaved edits gets the usual conflict message instead).
 
 ## Files edited with another editor too

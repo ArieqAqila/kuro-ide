@@ -167,6 +167,10 @@ impl SyncHandle {
     pub fn redo(&mut self) {
         self.core.input(Input::LocalRedo);
     }
+    /// Throw away every unsaved edit of every terminal editing this file.
+    pub fn discard(&mut self) {
+        self.core.input(Input::LocalDiscard);
+    }
     pub fn save(&mut self, force: bool) {
         self.core.input(Input::LocalSave { force });
     }
@@ -571,7 +575,11 @@ impl Core {
                     self.conn_client.insert(conn, *client);
                     *client
                 }
-                ClientMsg::Edit { id, .. } | ClientMsg::Undo { id } | ClientMsg::Redo { id } | ClientMsg::Save { id, .. } => id.client,
+                ClientMsg::Edit { id, .. }
+                | ClientMsg::Undo { id }
+                | ClientMsg::Redo { id }
+                | ClientMsg::Save { id, .. }
+                | ClientMsg::Discard { id } => id.client,
             };
             if matches!(msg, ClientMsg::Bye { .. }) {
                 self.drop_conn(conn);

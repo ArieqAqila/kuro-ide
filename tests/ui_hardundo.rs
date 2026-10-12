@@ -430,3 +430,66 @@ fn the_popup_uses_no_background_and_only_default_colours() {
         }
     }
 }
+
+#[test]
+fn unsaved_edits_are_discarded_by_hardundo_after_one_confirmation() {
+    let e = env();
+    let p = e.put("u.txt", "saved text\n");
+    let mut app = e.editor();
+    app.open_file(&p);
+    typed(&mut app, "NOT SAVED ");
+    assert!(app.buffer.is_modified());
+    app.exec_command("hardundo");
+    assert_eq!(app.focus, Focus::HardUndo, "{:?}", app.msg);
+    let s = shown(&mut app);
+    assert!(s.contains("discard all unsaved edits"), "{s}");
+    assert!(s.contains("every terminal"), "{s}");
+    press(&mut app, "y");
+    assert_eq!(app.buffer.text(), "saved text\n");
+    assert!(!app.buffer.is_modified());
+    assert_eq!(fs::read_to_string(&p).unwrap(), "saved text\n", "nothing was written");
+    assert!(app.msg.clone().unwrap_or_default().contains("unsaved edits discarded"), "{:?}", app.msg);
+}
+
+#[test]
+fn cancelling_keeps_the_unsaved_edits() {
+    let e = env();
+    let p = e.put("u.txt", "saved text\n");
+    let mut app = e.editor();
+    app.open_file(&p);
+    typed(&mut app, "KEEP ");
+    for key in ["n", "esc"] {
+        app.exec_command("hardundo");
+        press(&mut app, key);
+        assert_eq!(app.buffer.text(), "KEEP saved text\n", "after {key}");
+        assert!(app.buffer.is_modified());
+        assert_eq!(app.focus, Focus::Editor);
+    }
+}
+
+#[test]
+fn a_saved_change_and_unsaved_edits_are_both_taken_back() {
+    let e = env();
+    let p = e.put("both.txt", "original\n");
+    let mut app = e.edit_and_save(&p, "SAVED ");
+    typed(&mut app, "UNSAVED ");
+    app.exec_command("hardundo");
+    let s = shown(&mut app);
+    assert!(s.contains("restore 1 file"), "{s}");
+    assert!(s.contains("unsaved edits in this buffer are discarded"), "{s}");
+    press(&mut app, "y");
+    assert_eq!(fs::read_to_string(&p).unwrap(), "original\n");
+    assert_eq!(app.buffer.text(), "original\n");
+    assert!(!app.buffer.is_modified());
+}
+
+#[test]
+fn with_no_saved_change_and_no_unsaved_edit_there_is_nothing_to_undo() {
+    let e = env();
+    let p = e.put("clean.txt", "x\n");
+    let mut app = e.editor();
+    app.open_file(&p);
+    app.exec_command("hardundo");
+    assert_eq!(app.focus, Focus::Editor);
+    assert!(app.msg.clone().unwrap_or_default().contains("nothing to undo"), "{:?}", app.msg);
+}

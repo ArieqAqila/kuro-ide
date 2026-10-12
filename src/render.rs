@@ -139,7 +139,9 @@ impl App {
         };
         let rows: Vec<&crate::history::PlanItem> =
             if h.stage == 1 { h.items.iter().collect() } else { h.items.iter().filter(|i| i.flagged()).collect() };
-        let title = if h.stage == 1 {
+        let title = if h.stage == 1 && rows.is_empty() {
+            " Hard undo: discard all unsaved edits? ".to_string()
+        } else if h.stage == 1 {
             format!(
                 " Hard undo: restore {} file{} to before kuro first changed {}? ",
                 rows.len(),
@@ -153,7 +155,7 @@ impl App {
             if h.items.iter().any(|i| i.flagged()) {
                 "[y] restore   [n] cancel      files marked ⚠ get a second question"
             } else {
-                "[y] restore   [n] cancel"
+                if rows.is_empty() { "[y] discard   [n] cancel" } else { "[y] restore   [n] cancel" }
             }
         } else {
             "[y] overwrite them too   [n] skip them, restore the rest   [Esc] cancel all"

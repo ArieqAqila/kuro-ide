@@ -64,6 +64,10 @@ pub enum ClientMsg {
         id: MsgId,
         force: bool,
     },
+    /// Throw away every unsaved edit of every terminal: the text becomes the file on disk again.
+    Discard {
+        id: MsgId,
+    },
     Bye {
         client: ClientId,
     },
@@ -170,6 +174,7 @@ mod tests {
         rt(ClientMsg::Undo { id });
         rt(ClientMsg::Redo { id });
         rt(ClientMsg::Save { id, force: true });
+        rt(ClientMsg::Discard { id });
         rt(ClientMsg::Bye { client: 1 });
         rt(ClientMsg::Rejoin {
             client: 2,

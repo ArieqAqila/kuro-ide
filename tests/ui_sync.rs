@@ -15,13 +15,15 @@ struct Env {
     runtime: PathBuf,
     state: PathBuf,
     file: PathBuf,
+    history: std::sync::Arc<kuro::history::Store>,
 }
 
 fn env(initial: &str) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("work.txt");
     std::fs::write(&file, initial).unwrap();
-    Env { runtime: dir.path().join("run"), state: dir.path().join("state"), file, _dir: dir }
+    let history = std::sync::Arc::new(kuro::history::Store::new(dir.path().join("hist"), kuro::history::HistoryOptions::default()));
+    Env { runtime: dir.path().join("run"), state: dir.path().join("state"), file, history, _dir: dir }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -70,12 +72,14 @@ impl Term {
             observer: None,
         };
         let file = file.to_path_buf();
+        let history = e.history.clone();
         let join = std::thread::spawn(move || {
             let mut cfg = Config::default();
             cfg.editor.modal = false;
             cfg.sql.connections_file = "/nonexistent-kuro-test-dir/connections.toml".into();
             let mut app = App::new(cfg, kuro::buffer::Buffer::new(), Box::new(kuro::clipboard::MemoryClipboard::default()));
             app.set_sync_options(opts);
+            app.set_history(history);
             app.open_file(&file);
             ready_tx.send(()).unwrap();
             loop {
@@ -299,7 +303,13 @@ fn a_sql_file_open_in_two_terminals_is_one_shared_buffer_and_runs_the_shared_tex
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("queries.sql");
     std::fs::write(&file, "select 1;\n").unwrap();
-    let e = Env { runtime: dir.path().join("run"), state: dir.path().join("state"), file: file.clone(), _dir: dir };
+    let e = Env {
+        runtime: dir.path().join("run"),
+        state: dir.path().join("state"),
+        file: file.clone(),
+        history: std::sync::Arc::new(kuro::history::Store::new(dir.path().join("hist"), kuro::history::HistoryOptions::default())),
+        _dir: dir,
+    };
     let a = Term::open(&e, 1, MAX);
     let b = Term::open(&e, 2, MAX);
     // a SQL file is read-only until connected (disconnected state), so both terminals connect first
@@ -319,4 +329,46 @@ fn a_sql_file_open_in_two_terminals_is_one_shared_buffer_and_runs_the_shared_tex
         std::thread::yield_now();
     }
     assert_eq!(log.lock().unwrap().as_slice(), ["select 2;"], "b ran the statement a typed");
+}
+
+#[test]
+fn hardundo_discards_the_unsaved_edits_of_every_terminal_and_writes_nothing() {
+    let e = env("alpha\nbeta\n");
+    let a = Term::open(&e, 1, MAX);
+    let b = Term::open(&e, 2, MAX);
+    a.typed("A1 ");
+    b.wait("A1 arrives", |s| s.text.starts_with("A1 alpha"));
+    b.press("ctrl+end");
+    b.typed("B1");
+    a.wait("B1 arrives", |s| s.text.ends_with("B1"));
+    b.run("hardundo");
+    b.press("y");
+    for t in [&a, &b] {
+        t.wait("back to the file on disk, clean", |s| s.text == "alpha\nbeta\n" && !s.modified);
+    }
+    assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "alpha\nbeta\n");
+    a.press("ctrl+z");
+    assert_eq!(a.wait("still the original", |s| !s.modified).text, "alpha\nbeta\n", "undo does not bring the edits back");
+}
+
+#[test]
+fn hardundo_after_all_terminals_closed_and_the_edits_were_recovered_from_the_journal() {
+    let e = env("line one\nline two\n");
+    {
+        let a = Term::open(&e, 1, MAX);
+        a.typed("unsaved ");
+        a.wait("typed", |s| s.text.starts_with("unsaved line one"));
+    } // every terminal closed: the unsaved edits stay in the recovery journal
+    let b = Term::open(&e, 2, MAX);
+    let s = b.wait("the edits are recovered", |s| s.text.starts_with("unsaved line one"));
+    assert!(s.modified);
+    b.run("hardundo");
+    b.press("y");
+    let s = b.wait("discarded", |s| s.text == "line one\nline two\n" && !s.modified);
+    assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "line one\nline two\n");
+    drop(b);
+    let c = Term::open(&e, 3, MAX);
+    let s2 = c.snap();
+    assert_eq!(s2.text, "line one\nline two\n", "nothing is recovered a second time ({s:?})");
+    assert!(!s2.modified);
 }

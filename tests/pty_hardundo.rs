@@ -167,3 +167,22 @@ fn a_large_history_is_announced_once_and_nothing_is_deleted() {
     drop(a);
     assert!(store.entry_of(&p).is_some());
 }
+
+#[test]
+fn hard_undo_discards_unsaved_edits_in_every_real_terminal_and_writes_nothing() {
+    let e = env("the original text\n");
+    let mut a = terminal(&e, "a", CFG);
+    a.wait_for("opened", |s| has(s, "the original text"));
+    let mut b = terminal(&e, "b", CFG);
+    b.wait_for("opened", |s| has(s, "the original text"));
+    a.send("UNSAVED ");
+    b.wait_for("the edit arrives", |s| has(s, "UNSAVED the original text"));
+    command(&mut b, "hardundo");
+    b.wait_for("the question", |s| has(s, "discard all unsaved edits"));
+    b.send("y");
+    b.wait_for("discarded", |s| has(s, "the original text") && !has(s, "UNSAVED") && !has(s, "discard all unsaved"));
+    a.wait_for("the other terminal follows", |s| has(s, "the original text") && !has(s, "UNSAVED"));
+    assert_eq!(std::fs::read_to_string(&e.file).unwrap(), "the original text\n");
+    b.assert_default_background();
+    b.assert_ansi_palette_only();
+}

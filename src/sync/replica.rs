@@ -166,6 +166,11 @@ impl Replica {
         Effect::Send(ClientMsg::Redo { id })
     }
 
+    pub fn request_discard(&mut self) -> Effect {
+        let id = self.next_id();
+        Effect::Send(ClientMsg::Discard { id })
+    }
+
     pub fn request_save(&mut self, force: bool) -> Effect {
         let id = self.next_id();
         Effect::Send(ClientMsg::Save { id, force })

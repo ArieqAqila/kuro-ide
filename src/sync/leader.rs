@@ -328,6 +328,7 @@ impl LeaderCore {
             ClientMsg::Undo { id } => self.on_undo_redo(from, id, true),
             ClientMsg::Redo { id } => self.on_undo_redo(from, id, false),
             ClientMsg::Save { id, force } => self.on_save(from, id, force),
+            ClientMsg::Discard { id } => self.on_discard(from, id),
             ClientMsg::Rejoin { client, rev, recent, in_flight, saved_rev, disk_hash, .. } => {
                 self.stage_rejoin(client, recent, saved_rev, disk_hash);
                 self.respond_rejoin(Rejoin { client, rev, in_flight })
@@ -522,6 +523,49 @@ impl LeaderCore {
         self.journal_dirty = false;
         self.journal_bytes = 0;
         vec![all(ServerMsg::Saved { rev: self.rev, disk_hash: self.disk_hash.clone() })]
+    }
+
+    /// Hard undo of unsaved work: every terminal gets the file on disk back (as one shared edit), the undo history and the
+    /// recovery journal are dropped, and the text counts as saved. Nothing is written to the file.
+    fn on_discard(&mut self, from: ClientId, id: MsgId) -> Vec<Out> {
+        if let Some(e) = self.log.iter().find(|e| e.id == Some(id)) {
+            return vec![one(from, ServerMsg::Apply(e.clone()))]; // re-send after failover
+        }
+        let bytes = match self.fs.read(&self.path) {
+            Ok(b) => b,
+            Err(e) => return vec![one(from, ServerMsg::Notice { text: format!("cannot discard: the file cannot be read ({e})") })],
+        };
+        let Ok(text) = String::from_utf8(bytes.clone()) else {
+            return vec![one(from, ServerMsg::Notice { text: "cannot discard: the file on disk is not valid UTF-8".into() })];
+        };
+        let mut out = vec![];
+        if self.doc != text.as_str() {
+            let old = self.doc.to_string();
+            let mut ops = vec![];
+            if !old.is_empty() {
+                ops.push(Op::Del { pos: 0, text: old });
+            }
+            if !text.is_empty() {
+                ops.push(Op::Ins { pos: 0, text: text.clone() });
+            }
+            let new_doc = Rope::from_str(&text);
+            let entry = self.commit(from, Some(id), Kind::Undo, ops, new_doc);
+            out.push(all(ServerMsg::Apply(entry)));
+        }
+        self.undo.clear();
+        self.redo.clear();
+        self.open_group = None;
+        self.disk_hash = hash_bytes(&bytes);
+        self.disk_stamp = self.fs.stamp(&self.path).ok().flatten();
+        self.saved_rev = self.rev;
+        self.conflict = false;
+        if self.journal.reset(&self.disk_hash, self.rev).is_err() {
+            self.notices.push("could not reset the recovery journal".into());
+        }
+        self.journal_dirty = false;
+        self.journal_bytes = 0;
+        out.push(all(ServerMsg::Saved { rev: self.rev, disk_hash: self.disk_hash.clone() }));
+        out
     }
 
     // ------------------------------------------------------------------ periodic work

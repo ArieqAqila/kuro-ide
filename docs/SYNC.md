@@ -45,7 +45,7 @@ blocks anyone.
   leader is ready. Undo history restarts after a handover and kuro says so.
 * **Every kuro on the file dies:** the leader writes a journal of the unsaved edits to
   `$XDG_STATE_HOME/kuro/recovery/<key>.journal` (default `~/.local/state/kuro/`, mode `0600`) about once a second
-  and when it exits cleanly. The next kuro that opens the file restores them as unsaved edits and says
+  and when it exits cleanly (`:hardundo` throws these unsaved edits away in every terminal). The next kuro that opens the file restores them as unsaved edits and says
   `recovered N unsaved edits from the last session`. Edits typed in the last second before a simultaneous crash of
   **all** processes can be lost.
 * **No leader can be found or started** (for instance the runtime directory is unwritable): the terminal says so

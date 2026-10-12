@@ -55,7 +55,7 @@ undo/redo and save are shared, and nothing is lost if a kuro process dies. Nothi
 
 ### Hard undo
 
-`:hardundo` puts a file back as it was before kuro first wrote it (it works after every terminal was closed); `:hardundo all` does it for every file kuro
+`:hardundo` throws away all unsaved edits (in every terminal, also those recovered from an earlier session) and puts a file back as it was before kuro first wrote it (it works after every terminal was closed); `:hardundo all` does it for every file kuro
 has written. It always asks, and asks again for files changed outside kuro. kuro never deletes the history by itself: `kuro history list | show | delete | clear`.
 See [docs/HARD-UNDO.md](docs/HARD-UNDO.md).
 
