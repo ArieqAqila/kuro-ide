@@ -57,6 +57,13 @@ A line-oriented, case-sensitive definition language. A file is a sequence of **s
 * **Identifiers** are lowercase with a type prefix by convention (`l…` local, `gv_…` global value, `c…` condition, `d…` db-calc, `m…` map)
   but that is a convention, not syntax.
 
+## File fields (the C headers)
+
+`/home/ksystem/*.h` (139 files, 6.9 MB). Most are table definitions: `typedef struct alm { TEXT almdata[11]; LONG almprm; double almlat; … }`
+(types `TEXT`, `LONG`, `double`, `COUNT`), one header per table, **every member prefixed with the file's name** (`alm.h` → `almdata`,
+`almnama`, …), plus a block of index names (`almprmidx`, …). `error.h` and `posting.h` are logs/text, not definitions. Fields appear in ksystem
+files as the first column of `FIELD(…)`/`MAP(…)` rows and in conditions, so they get a **third colour**.
+
 ## What this means for the extension
 
 1. Detection rule: **file names** `sct[0-9]*`, `tmp_*`, files inside a folder named `scan`, **or** a first-lines marker

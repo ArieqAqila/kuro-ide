@@ -63,11 +63,16 @@ role = "builtin"               # one of: keyword builtin literal string number c
 section = '^PGM_FIELDS'        # the declaration is in lines after a line matching this, up to the next section header
 name = '^(l[A-Za-z0-9_]*)'     # regex on the line; group 1 is the declared name
 role = "variable"              # every later or earlier use of that exact name gets this role
+
+[[language.names_from]]        # names that live in the *user's own files* (ksystem: the table headers); see below
+setting = "headers"            # the user lists the files in config.toml: [ext.ksystem] headers = ["/path/*.h"]
+parser = "c-struct-members"    # one of a fixed set of built-in parsers (never code from the extension)
+role = "variable3"             # every occurrence of a name found there
 ```
 
 **What an extension may contain:** only `[[language]]` tables (and, later, other declarative tables under new `format`
-numbers). **Colours are roles, never colours:** the only way to colour text is `role = …` (ten roles: the eight above plus `variable` and
-`variable2`, two new `[colors]` entries added for this), which `[colors]` maps to ANSI
+numbers). **Colours are roles, never colours:** the only way to colour text is `role = …` (eleven roles: the eight above plus `variable`,
+`variable2` and `variable3`, three new `[colors]` entries added for this), which `[colors]` maps to ANSI
 palette slots 0-15 or the default foreground, so extension text follows the terminal theme exactly like the core editor.
 There is no field that can express RGB, a 256-colour index or a background, and unknown keys are rejected with a message
 naming the key.
@@ -99,6 +104,23 @@ kuro ext remove ksystem                 # delete the files and the record
 `detect`, `by_name`, `:setlang` and the picker use it. Extension language definitions are turned into the same `LangSpec`
 (their strings are leaked once per process, bounded by the limits above), so highlighting, bracket colours, snapshots and the
 colour-rule tests apply to them unchanged. `[[language.rule]]` adds an optional regex pass to the generic tokenizer.
+
+## Names from the user's own files (`names_from`)
+
+ksystem file fields are defined in C headers (`/home/ksystem/*.h`, ≈140 files, ≈5 000 members, e.g. `TEXT almnama[51];`). Shipping that list
+would copy their schema into our repository, so the extension instead lets **the user** point kuro at the files:
+
+```toml
+# ~/.config/kuro/config.toml
+[ext.ksystem]
+headers = ["/home/ksystem/*.h"]
+```
+
+The extension may only *declare* that it wants names from a setting and which **built-in parser** reads them (`c-struct-members`:
+`TYPE name;` / `TYPE name[N];` inside `typedef struct`, all other lines ignored). Hard limits: the paths come only from the user's
+config (an extension cannot name a path), regular files only, at most 4 000 files / 64 MiB / 100 000 names, read-only, nothing is ever
+executed, and a missing or unreadable path is a `:warnings` entry, never a failure. Names are cached in `~/.local/state/kuro/` keyed by
+file size and modification time and read lazily the first time a ksystem file is shown.
 
 ## The ksystem language (after approval)
 

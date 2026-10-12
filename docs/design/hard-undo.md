@@ -53,6 +53,23 @@ Restores write the target atomically (temp file in the same folder, `fsync`, ren
 secrets in it ends up in `~/.local/state/kuro/history/` too: `history.enabled = false` turns it all off, `history.exclude`
 (default: `*.env`, `.env*`, `*.pem`, `*.key`, `id_*`) skips such files, and `kuro history clear` deletes everything.
 
+## Baseline: the original, unedited file (decided)
+
+`:hardundo` goes back to the file **as it was before kuro ever edited it**, not to the start of the latest editing round. The
+first time kuro records an edit of a file it stores that content as the file's *baseline* and keeps it until you delete it with
+`kuro history delete`; closing every terminal and editing again the next day does **not** move it. One baseline per file, shared by
+all terminals showing it (opening a file in 10 terminals is still one history; one hard undo undoes all of their edits).
+
+**The one automatic thing, and why:** if the file is changed *outside kuro* between two sessions (a `git pull`, another editor), the
+old baseline no longer describes this file's own history, and restoring it would silently throw that outside work away. So when
+kuro opens a file whose disk hash differs from the hash kuro last recorded for it, it **starts a new baseline** from the content on
+disk and keeps the old one as a separate entry (`kuro history list` shows both). Nothing is deleted. The same external-change
+warning still guards the restore itself.
+
+**Scope:** `:hardundo` acts on the file in the current terminal (all its terminals together). `:hardundo all` lists every file
+that has a baseline different from its current content and restores the ones you confirm. (This default is mine: say if you want
+the opposite.)
+
 ## The flow
 
 `:hardundo` → popup listing the latest session's files:
