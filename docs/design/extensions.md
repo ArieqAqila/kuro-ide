@@ -57,11 +57,17 @@ line_comments = ["//"]         # block_comment = ["/*", "*/"], string_quotes, op
 
 [[language.rule]]              # extra rules for things a word list cannot express
 pattern = '\$\{[^}]*\}'        # Rust `regex` syntax: linear time, no backtracking blow-ups
-role = "builtin"               # one of: keyword builtin literal string number comment key operator
+role = "builtin"               # one of: keyword builtin literal string number comment key operator variable variable2
+
+[[language.declares]]          # names declared in one place and coloured wherever they are used in the file (ksystem needs this)
+section = '^PGM_FIELDS'        # the declaration is in lines after a line matching this, up to the next section header
+name = '^(l[A-Za-z0-9_]*)'     # regex on the line; group 1 is the declared name
+role = "variable"              # every later or earlier use of that exact name gets this role
 ```
 
 **What an extension may contain:** only `[[language]]` tables (and, later, other declarative tables under new `format`
-numbers). **Colours are roles, never colours:** the only way to colour text is `role = …`, which `[colors]` maps to ANSI
+numbers). **Colours are roles, never colours:** the only way to colour text is `role = …` (ten roles: the eight above plus `variable` and
+`variable2`, two new `[colors]` entries added for this), which `[colors]` maps to ANSI
 palette slots 0-15 or the default foreground, so extension text follows the terminal theme exactly like the core editor.
 There is no field that can express RGB, a 256-colour index or a background, and unknown keys are rejected with a message
 naming the key.

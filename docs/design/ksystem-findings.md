@@ -39,8 +39,11 @@ A line-oriented, case-sensitive definition language. A file is a sequence of **s
 * **Field attributes** (columns of `FIELD`): `INPUTRI` (followed by an order number), `PROTECT`, `QPROTECT`, `NOCHANGE`, `ALLCAPS`, `SCROLL`,
   `NUMERIC`, `TEXTAREA`, `NOLIMIT`, `UNSEEN`, `TOMBOL`, `CHECKBOX`, `DIGITS`, `MAND_PLUS`, `MANDATORY`, `MANDATORY_IF`, `VALIDATE`, …
 * **Types** (in `PGM_FIELDS`, `.var`): `STRING`, `NUMERIC`, `INT2`, `INT4`, `DATE`, `TIME`.
-* **Comments:** `/* … */`, spanning lines (≈11 000 uses; also the `/****…***/` banner). A line starting with `#` comments the line out
-  (≈160, always a commented-out `MAP` row). There is **no** `//` comment.
+* **Comments:** only `/* … */`, spanning lines (≈11 000 uses; also the `/****…***/` banner). *(Confirmed by you: there is no `//` and no
+  `#` comment. The ≈160 lines that start with `#` are therefore not comments; they are drawn as plain text.)*
+* **Variables (confirmed by you):** two kinds. **Local** variables are declared under `PGM_FIELDS` (first column, name starts with `l`).
+  **Calcs** are declared under `CALCS()` (first column, name starts with `c`); a calc is a variable without a type (it holds a condition, a
+  number or a string). They get **different colours**. Both are *used* in many other places (`MAP` columns, `IF cond …`, `DO_LIB_IF cond …`).
 * **Strings:** double quotes, `"…"`, which may span lines (embedded SQL such as `INIT "select … from …"` runs over several lines);
   single quotes occur mostly inside those SQL strings.
 * **Operators** (conditions in `CALCS`, e.g. `x==1 && y!="HL" || (a>=b)`): `==`, `!=`, `<>`, `<=`, `>=`, `<`, `>`, `&&`, `||`, `=`, and
@@ -60,7 +63,7 @@ A line-oriented, case-sensitive definition language. A file is a sequence of **s
    (`^(SCREEN\s|IMAGE\(|MAP\(|FIELD\(|CALCS\(|/\*{3,})`); `.var` as a second, smaller mode (or a rule inside the same mode, to be decided).
    `.html` / `.htm` / `.xml` / `.rptdesign` stay with the built-in modes.
 2. Rules: section headers as keywords (`^[A-Z_]+\(`), the action and family words as keywords/builtins, types as builtins,
-   `/* */` and line-start `#` as comments, `"…"` strings spanning lines, the operators above, numbers, `&name` as a builtin, `{name}`
+   `/* */` as the only comment, local and calc variables in two colours (see the design: declared names, two new colour roles), `"…"` strings spanning lines, the operators above, numbers, `&name` as a builtin, `{name}`
    as a literal, `IMAGE` bodies handled by a dedicated rule (label / underscore runs).
 3. This needs two things the current tokenizer does not have, both inside the proposed extension format: a **section-aware** rule
    (a regex rule anchored at line start) and a **multi-line string** (`"` that continues). The `[[language.rule]]` regex rules in the

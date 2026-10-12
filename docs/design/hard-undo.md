@@ -8,7 +8,7 @@ Status: **proposed, waiting for approval.** Nothing is implemented yet.
 kuro terminals were closed. It is separate from Ctrl+Z (which stays per buffer / shared across live terminals) and from the
 sync recovery journal (which keeps *unsaved* edits and is reset by every save, so it cannot know the pre-edit state).
 
-## Decisions I need from you
+## Decisions (see the end of the conversation: approved with the changes below)
 
 1. **What is a "session"?** Options:
    * **A (recommended): one global session** = from the moment the first kuro starts while no other kuro is running until the
@@ -74,7 +74,22 @@ secrets in it ends up in `~/.local/state/kuro/history/` too: `history.enabled = 
   sync apply: unsaved edits are never overwritten without the existing prompt).
 * A file that no longer exists but existed at the start is recreated (after the same flag + confirmation).
 
-## Cleanup
+## Cleanup: manual only (decided)
+
+kuro **never deletes history by itself and never restores by itself.** Growth is the user's to manage, with commands:
+
+```fish
+kuro history list                 # sessions: id, date, files, size on disk
+kuro history show <id>            # the files and change counts of one session
+kuro history delete <id> [<id>…]  # delete one or several sessions (blobs nothing refers to are removed with them)
+kuro history clear                # delete everything (asks first)
+```
+
+and in the editor `:hardundo` (latest session), `:hardundo list` (a picker of sessions) and `:hardundo <id>`. The one thing kuro does on
+its own is **tell you**: when the store passes `history.warn_mib` (default 200) it shows a single status message at start,
+`history uses 340 MiB: kuro history list`. It deletes nothing; `history.warn_mib = 0` silences it.
+
+~~Automatic retention (superseded):~~
 
 At kuro start (and by `kuro history clean`): delete sessions older than `history.max_days` (30) or beyond the newest
 `history.max_sessions` (10), then delete blobs no remaining manifest references, then, if the store is still above
