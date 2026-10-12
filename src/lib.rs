@@ -5,6 +5,7 @@ pub mod app;
 pub mod buffer;
 pub mod clipboard;
 pub mod config;
+pub mod ext;
 pub mod find;
 pub mod findbar;
 pub mod indent;
