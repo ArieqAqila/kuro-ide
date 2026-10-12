@@ -1419,7 +1419,9 @@ impl App {
             }
         }
         // `gg` with operator pending: handled via g_pending path above (FileStart)
-        if !ctrl {
+        // Shift + a navigation key (arrows, Home/End, PageUp/PageDown) selects, as in insert mode and VS Code; it is not the vi motion
+        let shift_nav = k.modifiers.contains(KeyModifiers::SHIFT) && !matches!(k.code, KeyCode::Char(_));
+        if !ctrl && !shift_nav {
             if let Some(m) = self.motion_for(&k) {
                 let cnt = self.take_count();
                 // vi quirk: `cw` changes to the end of the word, like `ce`

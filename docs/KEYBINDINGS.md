@@ -112,6 +112,10 @@ since kuro's startup check is the authority. Without the protocol:
 | `Ctrl+D` | Half page down |
 | `Ctrl+U` | Half page up |
 | `1-9` | Count prefix (`5j`, `3dd`) |
+| `Shift+← Shift+→ Shift+↑ Shift+↓` | Start or extend a selection (as in Insert mode) |
+| `Shift+Home Shift+End` | Select to the start / end of the line |
+| `Shift+PageUp Shift+PageDown` | Select a page up / down |
+| `Shift+Ctrl+← Shift+Ctrl+→` | Select by word |
 | `Esc` | Cancel a pending command, clear the selection, close the find bar |
 
 ### Visual

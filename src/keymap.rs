@@ -88,6 +88,10 @@ pub const BINDINGS: &[Binding] = &[
     b("n_ctrl_d", "Ctrl+D", "Normal", "Half page down"),
     b("n_ctrl_u", "Ctrl+U", "Normal", "Half page up"),
     b("n_count", "1-9", "Normal", "Count prefix (`5j`, `3dd`)"),
+    b("n_shift_arrows", "Shift+← Shift+→ Shift+↑ Shift+↓", "Normal", "Start or extend a selection (as in Insert mode)"),
+    b("n_shift_home_end", "Shift+Home Shift+End", "Normal", "Select to the start / end of the line"),
+    b("n_shift_page", "Shift+PageUp Shift+PageDown", "Normal", "Select a page up / down"),
+    b("n_shift_ctrl_arrows", "Shift+Ctrl+← Shift+Ctrl+→", "Normal", "Select by word"),
     b("n_esc", "Esc", "Normal", "Cancel a pending command, clear the selection, close the find bar"),
     // ---- visual mode
     b("v_motion", "h j k l w b e 0 $ gg G", "Visual", "Extend the selection"),

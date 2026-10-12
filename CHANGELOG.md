@@ -5,6 +5,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Shift + arrows, Home/End and PageUp/PageDown now select in **normal mode** (they used to run the plain vi motion and
+  select nothing); Shift+Ctrl+arrows select by word. A selection can be extended or shrunk in both directions.
+  Regression tests: `tests/ui_select_keys.rs`.
 - Moving up/down with the arrow keys (and `j`/`k`, PageUp/PageDown, Ctrl+D/U) keeps the **display** column, not the character
   index: a tab counts as many cells as it expands to (`editor.tab_width`) and wide characters count as their width, so
   the cursor no longer lands before `DO` on the next line of tab-separated fields. A column inside a tab or wide

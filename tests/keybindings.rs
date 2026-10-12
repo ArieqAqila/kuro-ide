@@ -942,6 +942,40 @@ fn insert() -> Vec<(&'static str, Probe)> {
             }),
         ),
         (
+            "n_shift_arrows",
+            p(|| {
+                let mut a = modal("abc\ndef\n");
+                press(&mut a, "shift+right shift+right shift+down");
+                assert_eq!(a.buffer.selected_text().as_deref(), Some("abc\nde"));
+            }),
+        ),
+        (
+            "n_shift_home_end",
+            p(|| {
+                let mut a = modal("abc def\n");
+                press(&mut a, "right shift+end");
+                assert_eq!(a.buffer.selected_text().as_deref(), Some("bc def"));
+                press(&mut a, "esc home right right shift+home");
+                assert_eq!(a.buffer.selected_text().as_deref(), Some("ab"));
+            }),
+        ),
+        (
+            "n_shift_page",
+            p(|| {
+                let mut a = modal(&many_lines());
+                press(&mut a, "shift+pagedown");
+                assert!(a.buffer.selection().is_some_and(|r| a.buffer.line_of(r.end) > 5));
+            }),
+        ),
+        (
+            "n_shift_ctrl_arrows",
+            p(|| {
+                let mut a = modal("one two three\n");
+                press(&mut a, "shift+ctrl+right");
+                assert_eq!(a.buffer.selected_text().as_deref(), Some("one "));
+            }),
+        ),
+        (
             "i_page",
             p(|| {
                 let mut a = modeless_app(&many_lines());
