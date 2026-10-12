@@ -105,3 +105,50 @@ fn the_selection_is_what_the_next_command_acts_on() {
     typed(&mut a, "y");
     assert_eq!(sel(&a), None, "yank finished");
 }
+
+#[test]
+fn regression_a_backward_selection_from_the_end_of_the_line_includes_the_last_character() {
+    // "I Love Claude!": in Normal mode the cursor rests on the `!`; selecting backwards must take it too
+    let (mut a, _) = app_with("I Love Claude!\nnext\n");
+    a.buffer.cursor = a.buffer.pos_of(0, 13);
+    a.buffer.set_goal();
+    press(&mut a, "shift+ctrl+left");
+    assert_eq!(a.buffer.selected_text().as_deref(), Some("!"), "the word `!` itself");
+    press(&mut a, "shift+ctrl+left");
+    assert_eq!(a.buffer.selected_text().as_deref(), Some("Claude!"));
+    press(&mut a, "shift+ctrl+left shift+ctrl+left");
+    assert_eq!(a.buffer.selected_text().as_deref(), Some("I Love Claude!"), "the whole line, end of line included");
+    // plain Shift+Left and Shift+Home too
+    let (mut b, _) = app_with("I Love Claude!\n");
+    b.buffer.cursor = b.buffer.pos_of(0, 13);
+    press(&mut b, "shift+left");
+    assert_eq!(b.buffer.selected_text().as_deref(), Some("!"));
+    let (mut c, _) = app_with("I Love Claude!\n");
+    c.buffer.cursor = c.buffer.pos_of(0, 13);
+    press(&mut c, "shift+home");
+    assert_eq!(c.buffer.selected_text().as_deref(), Some("I Love Claude!"));
+}
+
+#[test]
+fn a_forward_selection_and_a_cursor_inside_the_line_are_unchanged() {
+    let (mut a, _) = app_with("I Love Claude!\n");
+    a.buffer.cursor = a.buffer.pos_of(0, 13);
+    press(&mut a, "shift+right");
+    assert_eq!(a.buffer.selected_text().as_deref(), Some("!"));
+    let (mut b, _) = app_with("I Love Claude!\n");
+    b.buffer.cursor = b.buffer.pos_of(0, 12);
+    press(&mut b, "shift+left");
+    assert_eq!(b.buffer.selected_text().as_deref(), Some("d"), "only the character before the cursor");
+    let (mut c, _) = app_with("a\n\nb\n"); // empty lines and one-character lines
+    press(&mut c, "shift+down shift+down");
+    assert!(c.buffer.selection().is_some());
+}
+
+#[test]
+fn shift_up_from_the_last_character_of_a_line_starts_at_the_end_of_that_line() {
+    let (mut a, _) = app_with("first line\nsecond!\n");
+    a.buffer.cursor = a.buffer.pos_of(1, 6); // on the `!`
+    a.buffer.set_goal();
+    press(&mut a, "shift+up");
+    assert_eq!(a.buffer.selected_text().as_deref(), Some("line\nsecond!"));
+}

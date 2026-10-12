@@ -1030,6 +1030,15 @@ impl App {
         let shift = k.modifiers.contains(KeyModifiers::SHIFT);
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let extend = shift || matches!(self.mode, Mode::Visual | Mode::VisualLine);
+        let backward = matches!(k.code, KeyCode::Left | KeyCode::Up | KeyCode::Home | KeyCode::PageUp);
+        // In Normal mode the cursor rests *on* the last character of a line. Starting a backward selection from there must
+        // include that character, so the selection starts at the true end of the line.
+        if shift && backward && self.buffer.anchor.is_none() && self.mode == Mode::Normal {
+            let end = self.buffer.line_end(self.buffer.line_of(self.buffer.cursor));
+            if self.buffer.line_len(self.buffer.line_of(self.buffer.cursor)) > 0 && self.buffer.cursor + 1 == end {
+                self.buffer.cursor = end;
+            }
+        }
         let b = &self.buffer;
         let (line, _) = b.cursor_line_col();
         let page = self.layout(self.area).text.height.max(2) as usize - 1;

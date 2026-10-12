@@ -5,6 +5,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Keyboard selection in **normal mode** now reaches the end of the line: starting a backward selection (Shift+Left,
+  Shift+Ctrl+Left, Shift+Home, Shift+Up, Shift+PageUp) while the cursor rests on the last character takes that character too,
+  so `I Love Claude!` can be selected whole. Regression tests: `tests/ui_select_keys.rs`.
 - Horizontal scrolling with the mouse: the terminal's horizontal wheel (buttons 6/7 in SGR, X10 and urxvt reporting)
   and Shift + vertical wheel scroll the view sideways, clamped between the start and the end of the longest line
   (before, the view could be scrolled past the text). X10 and urxvt mouse reports are now parsed. Tests:
