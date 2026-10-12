@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.0]
+
+Major update: version raised from 0.1.0 to 0.2.0. It adds the extension system (`kuro ext`), `kuro git`, hard undo
+(`:hardundo`, `kuro history`), scrollbars, many more languages, and the fixes below. The bundled ksystem extension now
+declares `kuro = ">=0.2, <0.3"`; extensions that require `<0.2` must be updated.
+
 ### Fixed
 - Keyboard selection in **normal mode** now reaches the end of the line: starting a backward selection (Shift+Left,
   Shift+Ctrl+Left, Shift+Home, Shift+Up, Shift+PageUp) while the cursor rests on the last character takes that character too,

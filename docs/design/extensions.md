@@ -42,7 +42,7 @@ Status: **proposed, waiting for approval.** Nothing is implemented yet.
 format = 1                     # manifest schema version; kuro rejects any it does not know
 name = "ksystem"               # [a-z0-9-], 1-40 chars; also the directory name
 version = "0.1.0"              # the extension's own version (semver)
-kuro = ">=0.1, <0.2"           # kuro versions it works with (checked against kuro --version)
+kuro = ">=0.2, <0.3"           # kuro versions it works with (checked against kuro --version)
 description = "ksystem language"
 license = "MIT"
 

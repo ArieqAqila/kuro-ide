@@ -12,7 +12,7 @@ fn version_names_the_commit_so_a_stale_install_is_obvious() {
     let (out, ok) = run(&["--version"]);
     assert!(ok);
     let line = out.trim();
-    // "kuro 0.1.0 (775d078)" or "(775d078-dirty)", or "(unknown)" outside a git checkout
+    // "kuro 0.2.0 (775d078)" or "(775d078-dirty)", or "(unknown)" outside a git checkout
     assert!(line.starts_with(&format!("kuro {} (", env!("CARGO_PKG_VERSION"))), "{line:?}");
     let rev = line.rsplit('(').next().unwrap().trim_end_matches(')');
     assert!(rev == "unknown" || rev.trim_end_matches("-dirty").chars().all(|c| c.is_ascii_hexdigit()), "{line:?}");
@@ -54,7 +54,7 @@ mod ext_cli {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(
             d.join("kuro-ext.toml"),
-            "format = 1\nname = \"demo\"\nversion = \"1.0.0\"\nkuro = \">=0.1, <0.2\"\n[[language]]\nname = \"Demo\"\nextensions = [\"dm\"]\nkeywords = [\"if\"]\n",
+            "format = 1\nname = \"demo\"\nversion = \"1.0.0\"\nkuro = \">=0.2, <0.3\"\n[[language]]\nname = \"Demo\"\nextensions = [\"dm\"]\nkeywords = [\"if\"]\n",
         )
         .unwrap();
         d
@@ -70,7 +70,7 @@ mod ext_cli {
         assert_eq!(code, 0, "{err}");
         assert_eq!(out, "installed `demo` 1.0.0 (languages: Demo)\n");
         let (_, out, _) = kuro(home.path(), &["ext", "list"]);
-        assert!(out.starts_with("demo 1.0.0  languages: Demo  kuro: >=0.1, <0.2  [ok]"), "{out}");
+        assert!(out.starts_with("demo 1.0.0  languages: Demo  kuro: >=0.2, <0.3  [ok]"), "{out}");
         let (code, _, err) = kuro(home.path(), &["ext", "install", src.to_str().unwrap()]);
         assert_eq!(code, 1);
         assert!(err.contains("already installed") && err.contains("--force"), "{err}");

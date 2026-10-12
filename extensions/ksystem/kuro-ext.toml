@@ -4,7 +4,7 @@
 format = 1
 name = "ksystem"
 version = "0.1.0"
-kuro = ">=0.1, <0.2"
+kuro = ">=0.2, <0.3"
 description = "ksystem screen definition language: sections, actions, field attributes, local variables, calcs, file fields and indexes"
 license = "MIT"
 

@@ -30,7 +30,7 @@ pub struct Manifest {
     pub format: u32,
     pub name: String,
     pub version: String,
-    /// Range of kuro versions this works with, e.g. `">=0.1, <0.2"`.
+    /// Range of kuro versions this works with, e.g. `">=0.2, <0.3"`.
     pub kuro: String,
     #[serde(default)]
     pub description: String,

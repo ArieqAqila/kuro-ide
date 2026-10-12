@@ -325,8 +325,8 @@ fn check_entry(paths: &ExtPaths, key: Option<&[u8]>, e: &Entry) -> (Status, Opti
     };
     match manifest::parse(text, env!("CARGO_PKG_VERSION")) {
         Ok(m) => (Status::Ok, Some(m)),
-        // sealed but not valid for this kuro (e.g. after an upgrade): reported by the loader
-        Err(_) => (Status::Ok, None),
+        // sealed but not valid for this kuro (e.g. after an upgrade): the loader reports why; `list` still shows what it is
+        Err(_) => (Status::Ok, toml::from_str::<Manifest>(text).ok()),
     }
 }
 

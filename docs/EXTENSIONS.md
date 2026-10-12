@@ -18,7 +18,7 @@ source yet). It refuses links, hidden files, more than 64 files, more than 4 MiB
 format = 1                     # manifest schema version; kuro rejects any it does not know
 name = "ksystem"               # a-z 0-9 -, 1-40 characters; also the folder name
 version = "0.1.0"
-kuro = ">=0.1, <0.2"           # kuro versions it works with, checked against `kuro --version`
+kuro = ">=0.2, <0.3"           # kuro versions it works with, checked against `kuro --version`
 description = "…"
 license = "MIT"
 

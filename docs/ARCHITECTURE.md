@@ -47,7 +47,7 @@ views, keys, mouse, scrollbars), `ui` draws. `src/screen.rs` is the small trait 
 
 `src/ext/` is the extension system: `manifest` (parsing and validation), `store` (sealed install / list / remove / load, atomic registry),
 `seal` (HMAC-SHA256 with a per-user key), `lang` (manifest to `LangSpec` plus the extension's rules and roles), `names` (the built-in
-readers for `names_from`), `cli` (`kuro ext …`), `version` (the `kuro = ">=0.1, <0.2"` check). An extension language is an ordinary
+readers for `names_from`), `cli` (`kuro ext …`), `version` (the `kuro = ">=0.2, <0.3"` check). An extension language is an ordinary
 `LangSpec` with an optional `ExtData`; the tokenizer runs the generic pass first and then `apply_ext` (regex rules, declared names, names
 from the user's files), and `Kind::Ext(i)` is the language's own role `i`. `src/palette.rs` chooses extension colours from the terminal's own
 palette (pure functions; the query is in `main.rs`). See [EXTENSIONS.md](EXTENSIONS.md).
