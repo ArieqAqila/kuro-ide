@@ -22,6 +22,7 @@ const HELP: &str = "kuro - a vi-style terminal editor with VS Code-like usabilit
 USAGE:
     kuro [--config FILE] [FILE]
     kuro ext install DIR | remove NAME | list     manage extensions (see docs/EXTENSIONS.md)
+    kuro history list | show ID | delete ID… | clear   manage the hard-undo history (docs/HARD-UNDO.md)
     kuro git [-fl FILE]                            browse the history of the git repository you are in (docs/GIT.md)
 
 OPTIONS:
@@ -247,6 +248,23 @@ fn main() -> Result<()> {
         eprint!("{}", out.stderr);
         std::process::exit(out.code);
     }
+    if argv.first().map(String::as_str) == Some("history") {
+        let (cfg, _) = Config::load(&default_config_path());
+        let store = kuro::history::Store::new(kuro::history::Store::default_root(), cfg.history.options());
+        let ask = |n: usize, size: u64| -> bool {
+            use std::io::IsTerminal;
+            if !std::io::stdin().is_terminal() {
+                return false;
+            }
+            eprint!("delete the history of {n} file(s) ({size} bytes)? this cannot be undone [yes/N] ");
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).is_ok() && line.trim() == "yes"
+        };
+        let out = kuro::history::cli::run(&argv[1..], &store, Some(&ask));
+        print!("{}", out.stdout);
+        eprint!("{}", out.stderr);
+        std::process::exit(out.code);
+    }
     if argv.first().map(String::as_str) == Some("git") {
         return git_main(&argv[1..]);
     }
@@ -260,6 +278,15 @@ fn main() -> Result<()> {
     let (loaded, ext_warnings) = kuro::ext::store::load_all(&kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"));
     app.warnings.extend(ext_warnings);
     app.set_ext_langs(loaded.iter().flat_map(|e| kuro::ext::lang::build(&e.manifest)).collect());
+    // the hard-undo history: every write kuro makes is recorded here; it only ever tells you when it grows large
+    if cfg.history.enabled {
+        let store = std::sync::Arc::new(kuro::history::Store::new(kuro::history::Store::default_root(), cfg.history.options()));
+        let (size, warn) = (store.size_bytes(), store.opts.warn_bytes);
+        if warn > 0 && size > warn {
+            app.flash(format!("hard-undo history uses {} MiB: kuro history list (nothing is deleted automatically)", size >> 20));
+        }
+        app.set_history(store);
+    }
 
     let mut term = setup()?;
     let rx = spawn_reader();

@@ -53,6 +53,12 @@ Open the same file in several kuro terminals and they stay in step like VS Code 
 undo/redo and save are shared, and nothing is lost if a kuro process dies. Nothing to start. Details and limits:
 [docs/SYNC.md](docs/SYNC.md).
 
+### Hard undo
+
+`:hardundo` puts a file back as it was before kuro first wrote it (it works after every terminal was closed); `:hardundo all` does it for every file kuro
+has written. It always asks, and asks again for files changed outside kuro. kuro never deletes the history by itself: `kuro history list | show | delete | clear`.
+See [docs/HARD-UNDO.md](docs/HARD-UNDO.md).
+
 ### Git history
 
 `kuro git` browses the history of the repository you are in (tree, file history with renames, commits, diffs; `o` opens a file as it was at a

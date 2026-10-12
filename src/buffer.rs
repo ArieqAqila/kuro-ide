@@ -125,14 +125,23 @@ impl Buffer {
     }
 
     pub fn save_as(&mut self, path: &Path) -> std::io::Result<usize> {
+        self.save_as_with(path, None).map(|(n, _)| n)
+    }
+
+    /// Save atomically, telling `observer` (the hard-undo history) before and after. The second value is why the history did not record it.
+    pub fn save_as_with(
+        &mut self,
+        path: &Path,
+        observer: Option<&std::sync::Arc<dyn crate::history::observed::WriteObserver>>,
+    ) -> std::io::Result<(usize, Option<crate::history::Skip>)> {
         let mut text = self.text();
         if self.crlf {
             text = text.replace('\n', "\r\n");
         }
-        std::fs::write(path, text)?;
+        let skip = crate::history::observed::write_observed(observer, path, text.as_bytes())?;
         self.path = Some(path.to_path_buf());
         self.saved_version = self.version;
-        Ok(self.line_count())
+        Ok((self.line_count(), skip))
     }
 
     pub fn is_modified(&self) -> bool {

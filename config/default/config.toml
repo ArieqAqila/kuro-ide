@@ -43,6 +43,12 @@ adaptive_colors = true      # pick extension colours that stand out in your term
 enabled = true              # keep terminals that have the same file open in step
 max_file_mib = 5            # bigger files open without live sync
 
+[history]
+enabled = true              # keep the original of every file kuro writes (for :hardundo)
+max_file_mib = 5            # bigger files are not recorded
+exclude = ["*.env", ".env*", "*.pem", "*.key", "id_*"]   # file names that are never recorded
+warn_mib = 200              # tell me at start-up when the history is bigger than this (0: never); nothing is deleted automatically
+
 [colors]
 # Roles -> ANSI palette slot: 0-7 normal, 8-15 bright, -1 = default foreground.
 # The real colours come from your terminal theme.

@@ -41,6 +41,8 @@ pub enum Focus {
     Prompt,
     Confirm,
     Picker,
+    /// The hard-undo popup.
+    HardUndo,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -138,6 +140,14 @@ pub struct SynCache {
     pub kinds: Vec<Vec<Kind>>,
 }
 
+/// The hard-undo popup: the files, and whether it is asking the first or the second question.
+pub struct HardUndo {
+    pub items: Vec<crate::history::PlanItem>,
+    /// 1: restore these files? 2: some were changed outside kuro: overwrite those as well?
+    pub stage: u8,
+    pub note: Option<String>,
+}
+
 pub struct App {
     pub cfg: Config,
     pub buffer: Buffer,
@@ -178,6 +188,10 @@ pub struct App {
     /// Language modes of installed extensions (see `src/ext`).
     /// A read-only view (a file shown by `kuro git`): every edit and every write is refused with this message.
     pub view_only: Option<String>,
+    /// The hard-undo history (see docs/HARD-UNDO.md), when `history.enabled`.
+    pub history: Option<std::sync::Arc<crate::history::Store>>,
+    pub hardundo: Option<HardUndo>,
+    history_noted: std::collections::HashSet<std::path::PathBuf>,
     pub ext_langs: Vec<&'static LangSpec>,
     /// Styles of the current language's own colour roles, resolved from the extension's defaults and `[ext.<name>.colors]`.
     pub ext_styles: Vec<ratatui::style::Style>,
@@ -319,6 +333,9 @@ impl App {
             lang,
             lang_override: None,
             view_only: None,
+            history: None,
+            hardundo: None,
+            history_noted: Default::default(),
             ext_langs: vec![],
             ext_styles: vec![],
             ext_names_loaded: Default::default(),
@@ -369,6 +386,26 @@ impl App {
         self.palette = Some(p);
         self.refresh_ext_styles();
         self.syn = None;
+    }
+
+    /// Use this history for hard undo (`:hardundo`); every file kuro writes is recorded in it.
+    pub fn set_history(&mut self, store: std::sync::Arc<crate::history::Store>) {
+        self.history = Some(store);
+    }
+
+    fn observer(&self) -> Option<std::sync::Arc<dyn crate::history::observed::WriteObserver>> {
+        self.history.as_ref().map(|s| s.clone() as std::sync::Arc<dyn crate::history::observed::WriteObserver>)
+    }
+
+    /// Words for the status line when the history could not record a write (said once per file).
+    fn history_note(&mut self, path: &std::path::Path, skip: Option<crate::history::Skip>) -> String {
+        use crate::history::Skip;
+        match skip {
+            Some(s @ (Skip::TooLarge(_) | Skip::Error(_))) if self.history_noted.insert(path.to_path_buf()) => {
+                format!("  (hard undo is off for this file: {s})")
+            }
+            _ => String::new(),
+        }
     }
 
     /// Install the languages of loaded extensions (and re-detect the current file's language).
@@ -761,6 +798,7 @@ impl App {
         match self.focus {
             Focus::Prompt => return self.prompt_key(k),
             Focus::Confirm => return self.confirm_key(k),
+            Focus::HardUndo => return self.hardundo_key(k),
             Focus::Picker => return self.picker_key(k),
             _ => {}
         }
@@ -1001,10 +1039,16 @@ impl App {
         }
         match self.buffer.path.clone() {
             None => self.open_prompt("w "),
-            Some(p) => match self.buffer.save() {
-                Ok(n) => self.flash(format!("\"{}\" {n}L written", p.display())),
-                Err(e) => self.flash(format!("cannot write {}: {e}", p.display())),
-            },
+            Some(p) => {
+                let obs = self.observer();
+                match self.buffer.save_as_with(&p, obs.as_ref()) {
+                    Ok((n, skip)) => {
+                        let note = self.history_note(&p, skip);
+                        self.flash(format!("\"{}\" {n}L written{note}", p.display()))
+                    }
+                    Err(e) => self.flash(format!("cannot write {}: {e}", p.display())),
+                }
+            }
         }
     }
 
@@ -1988,15 +2032,18 @@ impl App {
                     self.save()
                 } else if self.sync.is_some() {
                     let copy = self.buffer.text();
-                    match std::fs::write(arg, copy) {
-                        Ok(()) => self.flash(format!("copy written to \"{arg}\" (live sync stays with the original file)")),
+                    let obs = self.observer();
+                    match crate::history::observed::write_observed(obs.as_ref(), std::path::Path::new(arg), copy.as_bytes()) {
+                        Ok(_) => self.flash(format!("copy written to \"{arg}\" (live sync stays with the original file)")),
                         Err(e) => self.flash(format!("cannot write {arg}: {e}")),
                     }
                 } else {
-                    match self.buffer.save_as(&PathBuf::from(arg)) {
-                        Ok(n) => {
+                    let obs = self.observer();
+                    match self.buffer.save_as_with(&PathBuf::from(arg), obs.as_ref()) {
+                        Ok((n, skip)) => {
                             self.update_lang();
-                            self.flash(format!("\"{arg}\" {n}L written"))
+                            let note = self.history_note(std::path::Path::new(arg), skip);
+                            self.flash(format!("\"{arg}\" {n}L written{note}"))
                         }
                         Err(e) => self.flash(format!("cannot write {arg}: {e}")),
                     }
@@ -2025,6 +2072,7 @@ impl App {
                 self.flash(m)
             }
             "setlang" | "setlanguage" => self.exec_setlang(arg),
+            "hardundo" => self.hardundo_command(arg),
             "snippets" | "snippet" => self.open_snippets(),
             "connect" => self.exec_sql(&format!("connect {arg}")),
             "disconnect" => self.sql_disconnect(),
@@ -2047,12 +2095,123 @@ impl App {
         self.sync_opts = Some(opts);
     }
 
+    /// `:hardundo` (this file) and `:hardundo all`: ask, then put files back as they were before kuro first wrote them.
+    fn hardundo_command(&mut self, arg: &str) {
+        let Some(store) = self.history.clone().filter(|s| s.opts.enabled) else {
+            return self.flash("hard undo is off (history.enabled = false)");
+        };
+        let items = match arg {
+            "" => match self.buffer.path.clone() {
+                Some(p) => store.plan(Some(&p)),
+                None => return self.flash("this buffer has no file name"),
+            },
+            "all" => store.plan(None),
+            other => return self.flash(format!("usage: :hardundo   or   :hardundo all   (not `{other}`)")),
+        };
+        if items.is_empty() {
+            return self.flash(if arg.is_empty() {
+                "nothing to undo: kuro has not changed this file (or it is already the original)"
+            } else {
+                "nothing to undo in any file"
+            });
+        }
+        let current = self.buffer.path.as_ref().map(|p| p.display().to_string());
+        let note = (self.buffer.is_modified() && items.iter().any(|i| Some(&i.entry.path) == current.as_ref()))
+            .then(|| "unsaved changes in this buffer are discarded".to_string());
+        self.hardundo = Some(HardUndo { items, stage: 1, note });
+        self.focus = Focus::HardUndo;
+    }
+
+    fn hardundo_key(&mut self, k: KeyEvent) {
+        let Some(h) = &self.hardundo else {
+            self.focus = Focus::Editor;
+            return;
+        };
+        let yes = matches!(k.code, KeyCode::Char('y') | KeyCode::Char('Y'));
+        let no = matches!(k.code, KeyCode::Char('n') | KeyCode::Char('N'));
+        let esc = matches!(k.code, KeyCode::Esc);
+        if esc || (no && h.stage == 1) {
+            self.hardundo = None;
+            self.focus = Focus::Editor;
+            return self.flash("hard undo cancelled: nothing was changed");
+        }
+        if h.stage == 1 && yes {
+            // look again now: a file may have changed while the question was open, and then the second question applies to it
+            if let (Some(store), Some(h)) = (self.history.clone(), &mut self.hardundo) {
+                h.items = h.items.iter().filter_map(|i| store.refresh(i)).collect();
+                h.items.retain(|i| i.disk != i.baseline_disk());
+            }
+            let flagged = self.hardundo.as_ref().is_some_and(|h| h.items.iter().any(|i| i.flagged()));
+            if flagged {
+                if let Some(h) = &mut self.hardundo {
+                    h.stage = 2;
+                }
+            } else if self.hardundo.as_ref().is_some_and(|h| h.items.is_empty()) {
+                self.hardundo = None;
+                self.focus = Focus::Editor;
+                self.flash("nothing to undo any more");
+            } else {
+                self.hardundo_apply(true);
+            }
+        } else if h.stage == 2 && (yes || no) {
+            self.hardundo_apply(yes);
+        }
+    }
+
+    /// Restore the files of the popup; `with_flagged`: also those changed outside kuro.
+    fn hardundo_apply(&mut self, with_flagged: bool) {
+        let (Some(h), Some(store)) = (self.hardundo.take(), self.history.clone()) else { return };
+        self.focus = Focus::Editor;
+        let (mut done, mut skipped, mut failed): (Vec<String>, usize, Vec<String>) = (vec![], 0, vec![]);
+        for item in &h.items {
+            // look again now: the disk may have changed while the popup was open; only files the user was *shown* as flagged
+            // (and said yes to) may be restored when flagged
+            let Some(fresh) = store.refresh(item) else { continue };
+            if fresh.flagged() && !(with_flagged && item.flagged()) {
+                skipped += 1;
+                continue;
+            }
+            if fresh.disk == fresh.baseline_disk() {
+                continue;
+            }
+            match store.restore(&fresh) {
+                Ok(()) => done.push(fresh.entry.path.clone()),
+                Err(e) => failed.push(e),
+            }
+        }
+        // the buffer of a restored file shows the restored text (a live-sync group reloads it by itself)
+        if let Some(p) = self.buffer.path.clone()
+            && done.iter().any(|d| std::path::Path::new(d) == crate::history::real_path(&p))
+            && !self.buffer.synced
+        {
+            let text = std::fs::read(&p).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            let mut b = Buffer::from_str(&text);
+            b.path = Some(p);
+            b.cursor = self.buffer.cursor.min(b.len_chars());
+            self.buffer = b;
+            self.syn = None;
+        }
+        let mut msg = format!("hard undo: {} file{} restored", done.len(), if done.len() == 1 { "" } else { "s" });
+        if skipped > 0 {
+            msg.push_str(&format!(", {skipped} skipped (changed outside kuro)"));
+        }
+        if let Some(e) = failed.first() {
+            msg.push_str(&format!("; FAILED: {e}"));
+        }
+        self.flash(msg);
+    }
+
     pub fn open_file(&mut self, path: &std::path::Path) {
         // leave the previous file's sync group first (flushes its journal)
         self.sync = None;
+        // a change made outside kuro since it last wrote this file is part of the file's hard-undo history
+        if let Some(h) = &self.history {
+            h.note_open(path, crate::history::read_if_exists(path).as_deref());
+        }
         let mut note: Option<String> = None;
         let mut synced: Option<SyncHandle> = None;
-        if let Some(opts) = self.sync_opts.clone() {
+        if let Some(mut opts) = self.sync_opts.clone() {
+            opts.observer = self.observer();
             match std::fs::read(path) {
                 Ok(bytes) if bytes.contains(&b'\r') => note = Some("CRLF file: opened without live sync".into()),
                 Ok(_) => match SyncHandle::start(path, opts, std::sync::Arc::new(|| {})) {
@@ -2117,6 +2276,9 @@ impl App {
         }
         let events = h.poll();
         let changed = !events.is_empty();
+        if let Some(msg) = self.history.as_ref().and_then(|s| s.last_error.lock().ok().and_then(|mut e| e.take())) {
+            self.flash(msg);
+        }
         for ev in events {
             match ev {
                 SyncEvent::Editor(e) => self.apply_sync_effect(e),
@@ -2682,7 +2844,7 @@ impl App {
     }
 
     fn handle_mouse_inner(&mut self, m: MouseEvent) {
-        if !self.cfg.editor.mouse || matches!(self.focus, Focus::Prompt | Focus::Confirm) {
+        if !self.cfg.editor.mouse || matches!(self.focus, Focus::Prompt | Focus::Confirm | Focus::HardUndo) {
             return;
         }
         if self.focus == Focus::Picker {

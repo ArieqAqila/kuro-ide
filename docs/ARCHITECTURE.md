@@ -31,6 +31,12 @@ Data flow: terminal event → `App::handle_key/handle_mouse` → state change �
 ratatui diffs it onto the terminal. Query results come back from the worker through a channel and are picked up
 by `App::tick()`.
 
+## Hard undo
+
+`src/history/`: `mod` is the store (log lines with checksums, content-addressed originals, plan / restore / management), `observed` is how every write kuro
+makes reports to it (`write_observed` for saves, `ObservedFs` for the sync leader), `cli` is `kuro history …`. The editor side is `App::hardundo_*`
+(the popup and its two questions) and `Buffer::save_as_with`. See [HARD-UNDO.md](HARD-UNDO.md).
+
 ## `kuro git`
 
 `src/gitview/`: `cmd` is the only code that starts `git` (read-only commands, parsers for its machine-readable output), `mod` is the model (four

@@ -114,13 +114,92 @@ impl App {
             Some(p) if self.focus == Focus::Picker => crate::picker::render(buf, area, p),
             _ => None,
         };
+        if self.focus == Focus::HardUndo {
+            self.render_hardundo(buf, area);
+        }
         match self.focus {
             Focus::Picker => picker_cursor,
             Focus::Prompt => pc,
-            Focus::Table | Focus::Confirm => None,
+            Focus::Table | Focus::Confirm | Focus::HardUndo => None,
             Focus::Find => cursor,
             Focus::Editor => cursor,
         }
+    }
+
+    /// The hard-undo popup: which files, how many changes, and what needs a second question. No colours: bold, dim and reverse only.
+    fn render_hardundo(&self, buf: &mut Cells, area: Rect) {
+        use ratatui::widgets::{Block, BorderType, Clear, Widget};
+        let Some(h) = &self.hardundo else { return };
+        let cwd = std::env::current_dir().ok();
+        let shown = |p: &str| -> String {
+            match &cwd {
+                Some(c) => std::path::Path::new(p).strip_prefix(c).map(|r| r.display().to_string()).unwrap_or_else(|_| p.to_string()),
+                None => p.to_string(),
+            }
+        };
+        let rows: Vec<&crate::history::PlanItem> =
+            if h.stage == 1 { h.items.iter().collect() } else { h.items.iter().filter(|i| i.flagged()).collect() };
+        let title = if h.stage == 1 {
+            format!(
+                " Hard undo: restore {} file{} to before kuro first changed {}? ",
+                rows.len(),
+                if rows.len() == 1 { "" } else { "s" },
+                if rows.len() == 1 { "it" } else { "them" }
+            )
+        } else {
+            " Changed outside kuro: overwrite these files as well? ".to_string()
+        };
+        let foot = if h.stage == 1 {
+            if h.items.iter().any(|i| i.flagged()) {
+                "[y] restore   [n] cancel      files marked ⚠ get a second question"
+            } else {
+                "[y] restore   [n] cancel"
+            }
+        } else {
+            "[y] overwrite them too   [n] skip them, restore the rest   [Esc] cancel all"
+        };
+        let max_rows = (area.height as usize).saturating_sub(8).max(1);
+        let width = (area.width.saturating_sub(4) as usize).clamp(20, 110) as u16;
+        let note_rows = h.note.is_some() as usize;
+        let height = (rows.len().min(max_rows) + 4 + note_rows + (rows.len() > max_rows) as usize) as u16;
+        let rect = Rect::new(
+            area.x + area.width.saturating_sub(width) / 2,
+            area.y + area.height.saturating_sub(height) / 3,
+            width.min(area.width),
+            height.min(area.height),
+        );
+        Clear.render(rect, buf);
+        Block::bordered().border_type(BorderType::Rounded).title(title).render(rect, buf);
+        let inner_w = rect.width.saturating_sub(4) as usize;
+        let mut y = rect.y + 1;
+        for item in rows.iter().take(max_rows) {
+            let e = &item.entry;
+            let mut tail = format!("  {} change{}", e.writes, if e.writes == 1 { "" } else { "s" });
+            if item.will_delete {
+                tail.push_str("  (created by kuro: will be deleted)");
+            }
+            if item.changed_since {
+                tail.push_str("  ⚠ changed since kuro's last write");
+            }
+            if item.also_outside {
+                tail.push_str("  ⚠ also changed outside kuro");
+            }
+            // the flags matter more than a long folder name: shorten the path from the left (`…/work/a.txt`)
+            let budget = inner_w.saturating_sub(table::display_width(&tail)).max(12);
+            let path = shorten_path(&shown(&e.path), budget);
+            let text = format!("{path}{tail}");
+            buf.set_stringn(rect.x + 2, y, table::fit(&text, inner_w), inner_w, if item.flagged() { bold() } else { Style::default() });
+            y += 1;
+        }
+        if rows.len() > max_rows {
+            buf.set_stringn(rect.x + 2, y, format!("… and {} more", rows.len() - max_rows), inner_w, dim());
+            y += 1;
+        }
+        if let Some(n) = &h.note {
+            buf.set_stringn(rect.x + 2, y, table::fit(n, inner_w), inner_w, dim());
+            y += 1;
+        }
+        buf.set_stringn(rect.x + 2, y + 1, table::fit(foot, inner_w), inner_w, bold());
     }
 
     /// The vertical and horizontal scrollbars: arrows at the ends, a dim track, and a thumb in reverse video
@@ -508,5 +587,39 @@ pub(crate) fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, ve
             (if vertical { "│" } else { "─" }, dim())
         };
         buf.set_string(x, y, sym, style);
+    }
+}
+
+/// Shorten a path from the left to fit `budget` cells, keeping the end: `/very/long/folder/a.txt` becomes `…/folder/a.txt` (at least the file name).
+pub fn shorten_path(path: &str, budget: usize) -> String {
+    if table::display_width(path) <= budget {
+        return path.to_string();
+    }
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    let mut kept = String::new();
+    for i in (0..parts.len()).rev() {
+        let candidate = if kept.is_empty() { parts[i].to_string() } else { format!("{}/{kept}", parts[i]) };
+        if table::display_width(&format!("…/{candidate}")) > budget {
+            break;
+        }
+        kept = candidate;
+    }
+    if kept.is_empty() {
+        return table::fit(parts.last().copied().unwrap_or(path), budget).trim_end().to_string();
+    }
+    format!("…/{kept}")
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::shorten_path;
+
+    #[test]
+    fn long_paths_keep_their_end() {
+        assert_eq!(shorten_path("/a/b/c.txt", 40), "/a/b/c.txt");
+        assert_eq!(shorten_path("/very/long/folder/name/a.txt", 18), "…/name/a.txt");
+        assert_eq!(shorten_path("/very/long/folder/name/a.txt", 10), "…/a.txt");
+        assert_eq!(shorten_path("/x/averyveryverylongfilename.txt", 8), "averyve…");
+        assert_eq!(shorten_path("", 5), "");
     }
 }

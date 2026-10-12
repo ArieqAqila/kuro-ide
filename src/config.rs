@@ -189,6 +189,41 @@ impl Default for ColorsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryConfig {
+    /// Keep the original of every file kuro writes, so `:hardundo` can take it back.
+    pub enabled: bool,
+    /// Files bigger than this many MiB are not recorded.
+    pub max_file_mib: u64,
+    /// File-name patterns (`*`, `?`) that are never recorded (secrets).
+    pub exclude: Vec<String>,
+    /// Tell the user once at start-up when the history is bigger than this many MiB (0: never). Nothing is ever deleted automatically.
+    pub warn_mib: u64,
+}
+
+impl Default for HistoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_file_mib: 5,
+            exclude: crate::history::DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect(),
+            warn_mib: 200,
+        }
+    }
+}
+
+impl HistoryConfig {
+    pub fn options(&self) -> crate::history::HistoryOptions {
+        crate::history::HistoryOptions {
+            enabled: self.enabled,
+            max_file_bytes: self.max_file_mib.saturating_mul(1 << 20),
+            exclude: self.exclude.clone(),
+            warn_bytes: self.warn_mib.saturating_mul(1 << 20),
+        }
+    }
+}
+
 /// `[ext.<name>]`: the user's settings for one extension.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -209,6 +244,7 @@ pub struct Config {
     pub sql: SqlConfig,
     pub ui: UiConfig,
     pub sync: SyncConfig,
+    pub history: HistoryConfig,
     pub colors: ColorsConfig,
     /// Per-extension settings: `[ext.<name>]` (colour overrides under `colors`, and the settings an extension asks for).
     pub ext: BTreeMap<String, ExtConfig>,
@@ -311,6 +347,7 @@ impl Config {
             sql: section(&table, "sql", &mut warnings),
             ui: section(&table, "ui", &mut warnings),
             sync: section(&table, "sync", &mut warnings),
+            history: section(&table, "history", &mut warnings),
             colors: section(&table, "colors", &mut warnings),
             ext: section(&table, "ext", &mut warnings),
         };

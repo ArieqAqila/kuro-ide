@@ -151,6 +151,12 @@ pub const BINDINGS: &[Binding] = &[
     b("c_wq", ":wq  :x", "Command line", "Write and quit"),
     b("c_e", ":e file", "Command line", "Open a file"),
     b("c_line", ":N", "Command line", "Go to line N"),
+    b(
+        "c_hardundo",
+        ":hardundo [all]",
+        "Command line",
+        "Put this file (or every recorded file) back as it was before kuro first wrote it; asks first, and again for files changed outside kuro",
+    ),
     b("c_setlang", ":setlang [mode]", "Command line", "Set the language mode (picker without an argument; `auto` to detect)"),
     b("c_snippets", ":snippets", "Command line", "Open the SQL snippet picker"),
     b("c_connect", ":connect NAME", "Command line", "Connect with a profile from connections.toml"),

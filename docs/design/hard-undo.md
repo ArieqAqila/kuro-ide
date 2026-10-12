@@ -1,6 +1,7 @@
 # Design proposal: hard undo (Feature 3)
 
-Status: **proposed, waiting for approval.** Nothing is implemented yet.
+Status: **implemented**, with the decisions made after this proposal (original-file baseline, no automatic deletion, one history per file shared by all
+terminals, outside edits in the same history). The user documentation is [../HARD-UNDO.md](../HARD-UNDO.md); where they differ, that file is right.
 
 ## What it is
 

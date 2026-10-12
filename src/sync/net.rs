@@ -43,6 +43,8 @@ pub struct SyncOptions {
     pub max_file_bytes: u64,
     /// Fixed terminal id (tests); random when `None`.
     pub client_id: Option<ClientId>,
+    /// Told about every save the leader makes (the hard-undo history).
+    pub observer: Option<std::sync::Arc<dyn crate::history::observed::WriteObserver>>,
 }
 
 impl SyncOptions {
@@ -58,7 +60,7 @@ impl SyncOptions {
             .filter(|v| !v.is_empty())
             .map(|d| PathBuf::from(d).join("kuro"))
             .unwrap_or_else(|| home.join(".local/state/kuro"));
-        SyncOptions { runtime_dir: runtime, state_dir: state, max_file_bytes, client_id: None }
+        SyncOptions { runtime_dir: runtime, state_dir: state, max_file_bytes, client_id: None, observer: None }
     }
 }
 
@@ -327,7 +329,12 @@ impl Core {
 
     fn factories(&self) -> (super::node::FsFactory, super::node::JournalFactory) {
         let jp = self.journal_path();
-        (Box::new(|| Box::new(RealFs) as Box<dyn Fs>), Box::new(move || Box::new(FileJournal::new(jp.clone())) as Box<dyn Journal>))
+        let observer = self.opts.observer.clone();
+        let fs_factory: super::node::FsFactory = match observer {
+            Some(o) => Box::new(move || Box::new(crate::history::observed::ObservedFs { observer: o.clone() }) as Box<dyn Fs>),
+            None => Box::new(|| Box::new(RealFs) as Box<dyn Fs>),
+        };
+        (fs_factory, Box::new(move || Box::new(FileJournal::new(jp.clone())) as Box<dyn Journal>))
     }
 
     // ---- joining

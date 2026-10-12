@@ -62,8 +62,13 @@ impl Term {
     fn open_path(e: &Env, file: &Path, id: u64, max_bytes: u64) -> Term {
         let (tx, rx): (Sender<Cmd>, Receiver<Cmd>) = channel();
         let (ready_tx, ready_rx) = channel();
-        let opts =
-            SyncOptions { runtime_dir: e.runtime.clone(), state_dir: e.state.clone(), max_file_bytes: max_bytes, client_id: Some(id) };
+        let opts = SyncOptions {
+            runtime_dir: e.runtime.clone(),
+            state_dir: e.state.clone(),
+            max_file_bytes: max_bytes,
+            client_id: Some(id),
+            observer: None,
+        };
         let file = file.to_path_buf();
         let join = std::thread::spawn(move || {
             let mut cfg = Config::default();

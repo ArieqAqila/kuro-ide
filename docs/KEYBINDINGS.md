@@ -232,6 +232,7 @@ since kuro's startup check is the authority. Without the protocol:
 | `:wq  :x` | Write and quit |
 | `:e file` | Open a file |
 | `:N` | Go to line N |
+| `:hardundo [all]` | Put this file (or every recorded file) back as it was before kuro first wrote it; asks first, and again for files changed outside kuro |
 | `:setlang [mode]` | Set the language mode (picker without an argument; `auto` to detect) |
 | `:snippets` | Open the SQL snippet picker |
 | `:connect NAME` | Connect with a profile from connections.toml |

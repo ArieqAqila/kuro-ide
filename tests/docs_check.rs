@@ -239,3 +239,22 @@ fn the_ksystem_readme_names_every_role_with_its_default_slot() {
         assert!(row.contains(&format!("| {slot} (")), "the README row of {role} does not say slot {slot}: {row}");
     }
 }
+
+const HARD_UNDO: &str = include_str!("../docs/HARD-UNDO.md");
+
+#[test]
+fn hard_undo_docs_name_the_commands_and_every_history_option() {
+    for cmd in [":hardundo", ":hardundo all", "kuro history list", "kuro history show", "kuro history delete", "kuro history clear"] {
+        assert!(HARD_UNDO.contains(cmd), "{cmd} is not in docs/HARD-UNDO.md");
+    }
+    for opt in ["history.warn_mib", "history.exclude", "history.max_file_mib", "history.enabled"] {
+        assert!(HARD_UNDO.contains(opt), "{opt} is not in docs/HARD-UNDO.md");
+    }
+    for pat in kuro::history::DEFAULT_EXCLUDE {
+        assert!(HARD_UNDO.contains(pat), "the default exclude pattern {pat} is not in docs/HARD-UNDO.md");
+    }
+    // the usage text of the command line and the docs agree on the sub-commands
+    for sub in ["list", "show", "delete", "clear"] {
+        assert!(kuro::history::cli::USAGE.contains(&format!("kuro history {sub}")), "{sub}");
+    }
+}

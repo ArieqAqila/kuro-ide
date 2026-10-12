@@ -47,7 +47,13 @@ impl Term {
     }
 
     fn open_file(e: &Env, file: &Path, id: u64, max: u64, peers: &mut [&mut Term]) -> Result<Term, StartError> {
-        let opts = SyncOptions { runtime_dir: e.runtime.clone(), state_dir: e.state.clone(), max_file_bytes: max, client_id: Some(id) };
+        let opts = SyncOptions {
+            runtime_dir: e.runtime.clone(),
+            state_dir: e.state.clone(),
+            max_file_bytes: max,
+            client_id: Some(id),
+            observer: None,
+        };
         let file = file.to_path_buf();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {

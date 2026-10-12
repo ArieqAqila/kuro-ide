@@ -31,6 +31,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **Hard undo**: `:hardundo` / `:hardundo all` put files back as they were before kuro first wrote them, even after every terminal was closed. Before kuro's
+  first write of a file it saves the original (atomically, checksummed log, in `~/.local/state/kuro/history/`); a popup lists the files and the number of changes,
+  `n`/`Esc` cancels, and files changed outside kuro get a second question; a file kuro created is deleted. Edits made in another editor stay in the same history.
+  Nothing is ever deleted or restored automatically: `kuro history list | show | delete | clear`. New `[history]` options `enabled`, `max_file_mib`, `exclude`
+  (secrets are not recorded by default) and `warn_mib`. Saves are now atomic. See `docs/HARD-UNDO.md`.
 - **`kuro git`**: a read-only history browser for the git repository you are in: the file tree, a file's history (renames followed), the
   history of the repository, a commit with its changed files, and the diff of a commit or of one file, with scrollbars and mouse. `o` opens a
   file as it was at a commit in the editor, read-only. `kuro git -fl FILE` opens one file's history directly. Outside a repository it prints

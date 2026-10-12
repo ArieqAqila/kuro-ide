@@ -9,6 +9,7 @@ pub mod ext;
 pub mod find;
 pub mod findbar;
 pub mod gitview;
+pub mod history;
 pub mod indent;
 pub mod input;
 pub mod keymap;

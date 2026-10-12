@@ -1401,6 +1401,24 @@ fn commands() -> Vec<(&'static str, Probe)> {
             }),
         ),
         (
+            "c_hardundo",
+            p(|| {
+                let dir = tempfile::tempdir().unwrap();
+                let f = dir.path().join("a.txt");
+                std::fs::write(&f, "original\n").unwrap();
+                let store = std::sync::Arc::new(kuro::history::Store::new(dir.path().join("h"), Default::default()));
+                let mut a = modeless_app("");
+                a.set_history(store);
+                a.open_file(&f);
+                typed(&mut a, "X");
+                press(&mut a, "ctrl+s");
+                a.exec_command("hardundo");
+                assert_eq!(a.focus, Focus::HardUndo);
+                press(&mut a, "y");
+                assert_eq!(std::fs::read_to_string(&f).unwrap(), "original\n");
+            }),
+        ),
+        (
             "c_setlang",
             p(|| {
                 let mut a = modal("x");

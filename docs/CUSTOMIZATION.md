@@ -220,6 +220,36 @@ VS Code tabs of one file). See [SYNC.md](SYNC.md).
 - Colours that an *extension* defines for its own roles (ksystem's local variables, calcs, file fields and indexes) start as the slots the extension declares. With this on, kuro asks the terminal for its real colours once at start-up (a short, bounded query, only when an extension is installed) and, for every role you have not mapped yourself, keeps the declared slot if it is readable on your theme and otherwise picks the palette slot that stands out best, or a text style (bold, underline, italic) if no slot does. It only ever chooses among the terminal's 16 palette slots and styles: kuro never invents a colour. Turn it off to always use the declared slots.
 - **Example:** `adaptive_colors = false`
 
+## `[history]`
+
+The hard-undo history (see [HARD-UNDO.md](HARD-UNDO.md)): before kuro first writes a file it saves the file as it was, so `:hardundo` can put it back, even after every
+kuro terminal was closed. The copies live in `~/.local/state/kuro/history/` (mode `0700`). **kuro never deletes anything there by itself**: use `kuro history delete` / `clear`.
+A file with secrets in it is stored there too (as plain text), so keep `exclude` current or turn the history off.
+
+### `history.enabled`
+- **Type:** boolean
+- **Default:** `true`
+- Record the original of every file kuro writes. Off: nothing is recorded and `:hardundo` says it is off.
+- **Example:** `enabled = false`
+
+### `history.max_file_mib`
+- **Type:** integer (MiB)
+- **Default:** `5`
+- Files bigger than this (before or after the write) are not recorded; kuro says so when you save one.
+- **Example:** `max_file_mib = 20`
+
+### `history.exclude`
+- **Type:** list of strings
+- **Default:** `["*.env", ".env*", "*.pem", "*.key", "id_*"]`
+- File-name patterns (`*` and `?`, matched against the name only) that are never recorded. Setting it replaces the default list.
+- **Example:** `exclude = ["*.env", "*.secret", "credentials*"]`
+
+### `history.warn_mib`
+- **Type:** integer (MiB)
+- **Default:** `200`
+- When the history is bigger than this kuro says so once at start-up (`history uses 340 MiB: kuro history list`). It only tells you; it deletes nothing. `0` turns the message off.
+- **Example:** `warn_mib = 1000`
+
 ## `[ext.<name>]`
 
 Per-extension settings, one table per installed extension (see [EXTENSIONS.md](EXTENSIONS.md)); not part of the option table above because the keys depend on the extension.
