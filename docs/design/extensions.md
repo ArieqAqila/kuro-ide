@@ -133,6 +133,23 @@ Unknown role names in that table are a `:warnings` entry. For ksystem the defaul
 so that locals, calcs, file fields and indexes tell apart out of the box, and since a slot is the terminal theme's own colour, light
 and dark themes each pick a legible one.
 
+### Adaptive default colours (`ui.adaptive_colors`, default on)
+
+The declared slot is only a starting point. At start-up kuro asks the terminal for its real colours (xterm's `OSC 4 ; n ; ?` for slots
+1-15 and `OSC 10` / `OSC 11` for the default text and background, one bounded query like the keyboard check) and, **for every extension
+role the user has not mapped**, picks the palette slot that is most distinct from the background, from the default text colour and
+from the other roles already placed (greedy, by perceptual distance). A dark theme and a light theme therefore get different
+slots, and a terminal whose palette is poor (few distinct slots, or a slot that nearly equals the background) is handled too:
+when no slot is distinct enough the role falls back to a **style** (bold, italic, underline, or a mix) on a good slot instead of a
+look-alike colour.
+
+What this deliberately does **not** do: *invent* colours. kuro never writes RGB or 256-colour sequences (the hard rule stays), so it can
+only choose among the terminal's own 16 slots and the text styles; "a new colour that matches the terminal" is achieved by choosing
+the matching slot or style, never by emitting a colour. If the terminal does not answer the query (tmux without passthrough, some
+multiplexers, `ui.adaptive_colors = false`) the declared slots are used. A role the user maps in `[ext.<name>.colors]` is never
+changed. The choice is a pure function of (palette, background, default text, roles), so it is unit-tested without a terminal, and a
+pty test feeds it an emulated palette.
+
 ## Names from the user's own files (`names_from`)
 
 ksystem file fields are defined in C headers (`/home/ksystem/*.h`, ≈140 files, ≈5 000 members, e.g. `TEXT almnama[51];`). Shipping that list
