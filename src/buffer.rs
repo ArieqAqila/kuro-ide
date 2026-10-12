@@ -444,6 +444,21 @@ impl Buffer {
         Some(self.remove(r))
     }
 
+    /// If the character at `pos` is a space or a tab, the char index just after the whole run of spaces and tabs
+    /// that contains it (mixed spaces and tabs are one run; the run stops at the end of the line).
+    pub fn whitespace_run_end(&self, pos: usize) -> Option<usize> {
+        let is_ws = |c: char| c == ' ' || c == '\t';
+        if !self.char_at(pos).is_some_and(is_ws) {
+            return None;
+        }
+        let end = self.line_end(self.line_of(pos));
+        let mut i = pos;
+        while i < end && is_ws(self.rope.char(i)) {
+            i += 1;
+        }
+        Some(i)
+    }
+
     pub fn word_range_at(&self, pos: usize) -> Range<usize> {
         let (l, _) = self.line_col(pos);
         let (s, e) = (self.line_start(l), self.line_end(l));

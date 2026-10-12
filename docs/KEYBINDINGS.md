@@ -7,6 +7,17 @@ reverse, fails the build, and every entry has a behaviour test. Regenerate after
 
 Letters in tables are case-sensitive in Normal mode (`G` is Shift+g). Configurable bindings say so.
 
+## Mouse rules
+
+* **Drag** selects up to the nearest character boundary: past the end of a line selects the whole line including
+  trailing spaces and tabs; the right half of a tab or a wide character (cells, not characters) includes it.
+* **Ctrl+right-click** on whitespace moves the cursor to the end of the whitespace run. Whitespace is a space or a
+  tab; a run is the maximal stretch of those on one line, so mixed `␠⇥␠␠` is one run, and any cell of a tab belongs
+  to it. The cursor lands on the next non-whitespace character, or at the end of the line for trailing whitespace
+  (in Normal mode, on the last character). On anything else it places the cursor under the mouse. VS Code itself has no
+  Ctrl+right-click action (Ctrl+click is go-to-definition; its double-click on whitespace selects the whole run, and
+  Ctrl+→ steps over it), so this follows the task's wording and VS Code's idea of a whitespace run.
+
 ## Which terminals can send Ctrl+Enter
 
 Most terminals send the very same byte for **Enter** and **Ctrl+Enter** (a carriage return), so no program can tell
@@ -221,6 +232,7 @@ since kuro's startup check is the authority. Without the protocol:
 |---|---|
 | `Click` | Place the cursor |
 | `Drag` | Select up to the nearest character boundary: past the end of a line selects through its trailing spaces and tabs, and the right half of a tab or wide character includes it |
+| `Ctrl+right-click` | On spaces/tabs: move the cursor to the end of that whitespace run; elsewhere: place the cursor |
 | `Double-click` | Select the word |
 | `Triple-click` | Select the line |
 | `Click the line number` | Select the whole line |

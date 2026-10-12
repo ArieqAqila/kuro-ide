@@ -2576,6 +2576,19 @@ impl App {
             app.buffer.pos_of(line, boundary_at_x(&app.buffer.line(line), cell, tab))
         };
         match m.kind {
+            // Ctrl + right-click on spaces/tabs: jump to the end of that whitespace run; elsewhere it just places the cursor
+            MouseEventKind::Down(MouseButton::Right) if m.modifiers.contains(KeyModifiers::CONTROL) && !in_gutter => {
+                self.focus = Focus::Editor;
+                self.follow = true;
+                self.buffer.break_group();
+                let pos = pos_at(self);
+                let target = self.buffer.whitespace_run_end(pos).unwrap_or(pos);
+                self.buffer.anchor = None;
+                self.buffer.cursor = target;
+                self.buffer.set_goal();
+                self.drag_origin = None;
+                self.clamp_normal();
+            }
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if shift => {
                 let d = self.cfg.editor.scroll_lines * 2;
                 self.left_col = if m.kind == MouseEventKind::ScrollDown { self.left_col + d } else { self.left_col.saturating_sub(d) };

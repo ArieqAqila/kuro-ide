@@ -1520,6 +1520,16 @@ fn mouse_probes() -> Vec<(&'static str, Probe)> {
             }),
         ),
         (
+            "m_ctrl_right",
+            p(|| {
+                let mut a = modal("ab  \t cd");
+                let gw = gutter_w(&a);
+                render(&mut a);
+                mouse_mod(&mut a, K::Down(MouseButton::Right), gw + 3, 0, KeyModifiers::CONTROL);
+                assert_eq!(lc(&a), (0, 6), "just before `cd`");
+            }),
+        ),
+        (
             "m_drag",
             p(|| {
                 let mut a = modal("hello world");

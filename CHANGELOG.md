@@ -5,6 +5,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Ctrl + right-click on spaces or tabs moves the cursor to the end of that whitespace run (mixed tabs and spaces are
+  one run); the rule is in `docs/KEYBINDINGS.md`. Tests: `tests/ui_ctrl_rightclick.rs`.
 - Mouse selection (drag) now extends to the true end of the line, including trailing spaces and tabs, in every mode,
   and always matches the reverse-video highlight. A drag selects up to the nearest character *boundary*: dragging
   past the end of a line selects the whole line, and ending on the right half of a tab or a wide character includes it

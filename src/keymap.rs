@@ -174,6 +174,12 @@ pub const BINDINGS: &[Binding] = &[
         "Mouse",
         "Select up to the nearest character boundary: past the end of a line selects through its trailing spaces and tabs, and the right half of a tab or wide character includes it",
     ),
+    b(
+        "m_ctrl_right",
+        "Ctrl+right-click",
+        "Mouse",
+        "On spaces/tabs: move the cursor to the end of that whitespace run; elsewhere: place the cursor",
+    ),
     b("m_double", "Double-click", "Mouse", "Select the word"),
     b("m_triple", "Triple-click", "Mouse", "Select the line"),
     b("m_gutter", "Click the line number", "Mouse", "Select the whole line"),
