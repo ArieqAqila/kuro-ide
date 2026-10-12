@@ -32,6 +32,8 @@ pub struct EditorConfig {
     pub mouse: bool,
     pub double_click_ms: u64,
     pub scroll_lines: usize,
+    /// Show scrollbars (they hide by themselves when everything fits).
+    pub scrollbars: bool,
 }
 
 impl Default for EditorConfig {
@@ -49,6 +51,7 @@ impl Default for EditorConfig {
             mouse: true,
             double_click_ms: 400,
             scroll_lines: 3,
+            scrollbars: true,
         }
     }
 }

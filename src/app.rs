@@ -98,11 +98,25 @@ pub struct SqlUi {
 }
 
 pub struct Layout {
+    /// The editing viewport (gutter and text), without the scrollbars.
     pub text: Rect,
+    /// Vertical scrollbar (right edge) and horizontal scrollbar (bottom edge); `None` when hidden.
+    pub vbar: Option<Rect>,
+    pub hbar: Option<Rect>,
     pub gutter_w: u16,
     pub pane: Option<Rect>,
     pub status: Rect,
     pub cmd: Rect,
+}
+
+#[derive(Clone, Copy)]
+struct BarDrag {
+    vertical: bool,
+    grab: usize,
+    /// Where the pointer was when the thumb was grabbed, and the scroll offset then: while the pointer stays on that
+    /// cell nothing moves (the thumb is quantised to cells, so recomputing would make it jump a little).
+    origin: isize,
+    offset: usize,
 }
 
 struct Click {
@@ -146,6 +160,8 @@ pub struct App {
     line_copy: Option<String>,
     click: Option<Click>,
     drag_origin: Option<usize>,
+    /// A scrollbar thumb being dragged: which bar and where on the thumb it was grabbed.
+    bar_drag: Option<BarDrag>,
     pub area: Rect,
     /// Time source for click timing; tests replace it with a manual clock.
     clock: std::sync::Arc<dyn Fn() -> Instant + Send + Sync>,
@@ -282,6 +298,7 @@ impl App {
             line_copy: None,
             click: None,
             drag_origin: None,
+            bar_drag: None,
             area: Rect::new(0, 0, 80, 24),
             clock: std::sync::Arc::new(Instant::now),
             quit: false,
@@ -389,6 +406,34 @@ impl App {
     // geometry
     // ------------------------------------------------------------------
 
+    /// Split the editor area into the viewport and the scrollbars. A bar shows only when the content does not fit,
+    /// and each bar takes a row or column from the other's room, so the two are decided together.
+    fn place_scrollbars(&self, editor: Rect, gutter_w: u16) -> (Rect, Option<Rect>, Option<Rect>) {
+        if !self.cfg.editor.scrollbars {
+            return (editor, None, None);
+        }
+        let lines = self.buffer.line_count();
+        let widest = self.widest_line();
+        let (mut v, mut h) = (false, false);
+        for _ in 0..3 {
+            let rows = editor.height.saturating_sub(h as u16) as usize;
+            let cols = editor.width.saturating_sub(v as u16 + gutter_w) as usize;
+            let nv = editor.width > gutter_w + 2 && rows > 0 && lines > rows;
+            let nh = editor.height > 2 && cols > 0 && widest > cols;
+            if (nv, nh) == (v, h) {
+                break;
+            }
+            (v, h) = (nv, nh);
+        }
+        // a bar needs room for itself and a sliver of text
+        let v = v && editor.width > gutter_w + 2;
+        let h = h && editor.height > 2;
+        let text = Rect::new(editor.x, editor.y, editor.width - v as u16, editor.height - h as u16);
+        let vbar = v.then(|| Rect::new(text.right(), editor.y, 1, text.height));
+        let hbar = h.then(|| Rect::new(editor.x + gutter_w.min(text.width), text.bottom(), text.width.saturating_sub(gutter_w), 1));
+        (text, vbar, hbar)
+    }
+
     pub fn layout(&self, area: Rect) -> Layout {
         let h = area.height;
         let status = Rect::new(area.x, area.bottom().saturating_sub(2).max(area.y), area.width, h.min(2).saturating_sub(1));
@@ -411,12 +456,13 @@ impl App {
             } as u16;
             pane_h = (3 + body).min(avail * 3 / 5).max(4);
         }
-        let text = Rect::new(area.x, area.y, area.width, avail - pane_h);
-        let pane = (pane_h > 0).then(|| Rect::new(area.x, text.bottom(), area.width, pane_h));
+        let editor = Rect::new(area.x, area.y, area.width, avail - pane_h);
+        let pane = (pane_h > 0).then(|| Rect::new(area.x, editor.bottom(), area.width, pane_h));
         // width follows the digit count of the total line count: stable while scrolling, grows at 10/100/1000
         let digits = self.buffer.line_count().to_string().len() as u16;
         let gutter_w = if self.cfg.editor.line_numbers { digits + 2 } else { 0 };
-        Layout { text, gutter_w, pane, status, cmd }
+        let (text, vbar, hbar) = self.place_scrollbars(editor, gutter_w);
+        Layout { text, vbar, hbar, gutter_w, pane, status, cmd }
     }
 
     pub fn error_lines(&self, e: &DbError, width: usize) -> Vec<String> {
@@ -2561,7 +2607,25 @@ impl App {
                 return self.bar_mouse(m, &bl);
             }
         }
-        if !contains(l.text, x, y) {
+        if self.scrollbar_mouse(m, &l) {
+            return;
+        }
+        // a drag that started in the text keeps selecting when the pointer leaves it (the edge is where it ends)
+        let (x, y) = if matches!(m.kind, MouseEventKind::Drag(MouseButton::Left))
+            && self.drag_origin.is_some()
+            && l.text.width > 0
+            && l.text.height > 0
+        {
+            (x.clamp(l.text.x, l.text.right() - 1), y.clamp(l.text.y, l.text.bottom() - 1))
+        } else {
+            (x, y)
+        };
+        let on_bar = l.vbar.is_some_and(|r| contains(r, x, y)) || l.hbar.is_some_and(|r| contains(r, x, y));
+        let is_wheel = matches!(
+            m.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown | MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
+        );
+        if !contains(l.text, x, y) && !(on_bar && is_wheel) {
             return;
         }
         let tab = self.cfg.editor.tab_width;
@@ -2683,6 +2747,74 @@ impl App {
         let max = self.max_left_col() as isize;
         self.left_col = (self.left_col as isize + d).clamp(0, max.max(0)) as usize;
         self.follow = false;
+    }
+
+    /// Scrollbar clicks and drags. Returns true when the event belonged to a scrollbar.
+    fn scrollbar_mouse(&mut self, m: MouseEvent, l: &Layout) -> bool {
+        use crate::scrollbar::{Part, bar};
+        let (x, y) = (m.column, m.row);
+        let geometry = |app: &App, vertical: bool| {
+            if vertical {
+                let r = l.vbar?;
+                Some((r, bar(r.height as usize, app.buffer.line_count(), l.text.height as usize, app.top_line)?))
+            } else {
+                let r = l.hbar?;
+                Some((r, bar(r.width as usize, app.widest_line(), r.width as usize, app.left_col)?))
+            }
+        };
+        // an ongoing thumb drag follows the pointer even outside the bar
+        if let Some(d) = self.bar_drag {
+            match (m.kind, geometry(self, d.vertical)) {
+                (MouseEventKind::Drag(MouseButton::Left), Some((r, b))) => {
+                    let pointer = if d.vertical { y as isize - r.y as isize } else { x as isize - r.x as isize };
+                    let off = if pointer == d.origin { d.offset } else { b.offset_for_pointer(pointer, d.grab) };
+                    if d.vertical {
+                        self.top_line = off;
+                    } else {
+                        self.left_col = off;
+                    }
+                    self.follow = false;
+                    return true;
+                }
+                (MouseEventKind::Up(_), _) | (_, None) => {
+                    self.bar_drag = None;
+                    return true;
+                }
+                _ => return true,
+            }
+        }
+        let MouseEventKind::Down(MouseButton::Left) = m.kind else { return false };
+        for vertical in [true, false] {
+            let Some((r, b)) = geometry(self, vertical) else { continue };
+            if !contains(r, x, y) {
+                continue;
+            }
+            let pos = if vertical { (y - r.y) as usize } else { (x - r.x) as usize };
+            let page = (b.len.min(if vertical { l.text.height } else { r.width } as usize).max(2) - 1) as isize;
+            match b.part_at(pos) {
+                Part::ArrowStart => self.scroll_bar_by(vertical, -1),
+                Part::ArrowEnd => self.scroll_bar_by(vertical, 1),
+                Part::BeforeThumb => self.scroll_bar_by(vertical, -page),
+                Part::AfterThumb => self.scroll_bar_by(vertical, page),
+                Part::Thumb { grab } => {
+                    let offset = if vertical { self.top_line } else { self.left_col }.min(b.max_offset);
+                    self.bar_drag = Some(BarDrag { vertical, grab, origin: pos as isize, offset });
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Scroll the view along one axis by `d` lines or columns, within the content.
+    fn scroll_bar_by(&mut self, vertical: bool, d: isize) {
+        if vertical {
+            let max = self.buffer.line_count().saturating_sub(self.layout(self.area).text.height as usize);
+            self.top_line = (self.top_line as isize + d).clamp(0, max as isize) as usize;
+            self.follow = false;
+        } else {
+            self.scroll_cols(d);
+        }
     }
 
     fn scroll_text(&mut self, d: isize) {

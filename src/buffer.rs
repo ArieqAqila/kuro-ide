@@ -271,8 +271,11 @@ impl Buffer {
 
     /// Width of line `l` in display cells.
     pub fn line_cells(&self, l: usize, tab: usize) -> usize {
+        if l >= self.line_count() {
+            return 0;
+        }
         let mut x = 0;
-        for ch in self.line(l).chars() {
+        for ch in self.rope.line(l).chars().take_while(|c| *c != '\n' && *c != '\r') {
             x += cell_width(ch, x, tab);
         }
         x

@@ -263,3 +263,44 @@ fn tiny_terminal() {
     let buf = render_size(&mut app, 20, 6);
     assert_snapshot("tiny_20x6", &buf);
 }
+
+/// A document taller and wider than the window, so both scrollbars show; scrolled into the middle.
+fn long_doc() -> String {
+    let mut t = String::new();
+    for i in 0..120 {
+        if i == 7 {
+            t.push_str(&format!("// {}\n", "a very long comment line that goes on and on ".repeat(5)));
+        } else {
+            t.push_str(&format!("func f{i}(x int) int {{ return x + {i} }}\n"));
+        }
+    }
+    t
+}
+
+#[test]
+fn scrollbars_at_80x24() {
+    let (mut app, _) = app_with(&long_doc());
+    app.set_lang(Some(&syntax::GO));
+    render_size(&mut app, 80, 24);
+    app.top_line = 40;
+    app.left_col = 30;
+    app.follow = false;
+    assert_snapshot("scrollbars_80x24", &render_size(&mut app, 80, 24));
+}
+
+#[test]
+fn scrollbars_at_120x40() {
+    let (mut app, _) = app_with(&long_doc());
+    app.set_lang(Some(&syntax::GO));
+    render_size(&mut app, 120, 40);
+    app.top_line = 70;
+    app.left_col = 0;
+    app.follow = false;
+    assert_snapshot("scrollbars_120x40", &render_size(&mut app, 120, 40));
+}
+
+#[test]
+fn scrollbars_hidden_when_the_text_fits_at_80x24() {
+    let (mut app, _) = app_with("short\nfile\n");
+    assert_snapshot("scrollbars_hidden_80x24", &render_size(&mut app, 80, 24));
+}

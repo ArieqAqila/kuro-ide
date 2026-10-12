@@ -180,6 +180,12 @@ pub const BINDINGS: &[Binding] = &[
         "Mouse",
         "On spaces/tabs: move the cursor to the end of that whitespace run; elsewhere: place the cursor",
     ),
+    b(
+        "m_scrollbar",
+        "Click / drag a scrollbar",
+        "Mouse",
+        "Arrow: step one line or column; track: page; thumb: drag to scroll (bars hide when the text fits; `editor.scrollbars`)",
+    ),
     b("m_double", "Double-click", "Mouse", "Select the word"),
     b("m_triple", "Triple-click", "Mouse", "Select the line"),
     b("m_gutter", "Click the line number", "Mouse", "Select the whole line"),

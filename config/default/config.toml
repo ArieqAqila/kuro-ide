@@ -13,6 +13,7 @@ relative_numbers = false  # true: current line absolute, others relative (opt-in
 mouse = true
 double_click_ms = 400
 scroll_lines = 3
+scrollbars = true             # vertical / horizontal scrollbars (hidden when everything fits)
 
 [clipboard]
 backend = "auto"          # auto | wl-clipboard | xclip | xsel | osc52

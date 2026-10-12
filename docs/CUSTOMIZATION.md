@@ -93,6 +93,12 @@ or if a documented default differs from the real one. Headings below are the key
 - Lines moved per mouse-wheel notch in the editor. A horizontal notch moves twice as many cells.
 - **Example:** `scroll_lines = 5`
 
+### `editor.scrollbars`
+- **Type:** boolean
+- **Default:** `true`
+- Draw a vertical scrollbar on the right edge and a horizontal one at the bottom of the editor. Each appears only when the text does not fit (more lines than rows, or a line wider than the window) and disappears again when it does. Click an arrow to step, click the track to page, drag the thumb to scroll; the thumb is drawn in reverse video and the track dim, never with a background colour.
+- **Example:** `scrollbars = false`
+
 ## `[clipboard]`
 
 ### `clipboard.backend`

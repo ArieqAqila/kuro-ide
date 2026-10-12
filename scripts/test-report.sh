@@ -10,7 +10,7 @@ layer_of() {
     lib|classify_fixtures|docs_check|keybindings|cli) echo "unit" ;;
     prop) echo "property/fuzz" ;;
     snapshots) echo "snapshot" ;;
-    ui_render|ui_sql|ui_sql_run|ui_indent|ui_modes|ui_suggest|ui_password|ui_cursor|ui_select_keys|ui_mouse_select|ui_ctrl_rightclick|ui_hscroll|color_rule) echo "ui (cell buffer)" ;;
+    ui_render|ui_sql|ui_sql_run|ui_indent|ui_modes|ui_suggest|ui_password|ui_cursor|ui_select_keys|ui_mouse_select|ui_ctrl_rightclick|ui_hscroll|ui_scrollbars|color_rule) echo "ui (cell buffer)" ;;
     sync_sim) echo "concurrency (simulator)" ;;
     sync_net|ui_sync) echo "concurrency (real sockets)" ;;
     pty_ui) echo "pty (real binary)" ;;

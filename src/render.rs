@@ -80,6 +80,7 @@ impl App {
         self.find.refresh(&self.buffer);
 
         let mut cursor = self.render_text(buf, &l);
+        self.render_scrollbars(buf, &l);
         if self.find.open {
             let c = findbar::render(buf, l.text, &self.find, &self.buffer, self.focus == Focus::Find);
             if self.focus == Focus::Find {
@@ -104,6 +105,21 @@ impl App {
             Focus::Table | Focus::Confirm => None,
             Focus::Find => cursor,
             Focus::Editor => cursor,
+        }
+    }
+
+    /// The vertical and horizontal scrollbars: arrows at the ends, a dim track, and a thumb in reverse video
+    /// (no background colour is ever set).
+    fn render_scrollbars(&self, buf: &mut Cells, l: &Layout) {
+        if let Some(r) = l.vbar
+            && let Some(bar) = crate::scrollbar::bar(r.height as usize, self.buffer.line_count(), l.text.height as usize, self.top_line)
+        {
+            draw_bar(buf, r, &bar, true);
+        }
+        if let Some(r) = l.hbar
+            && let Some(bar) = crate::scrollbar::bar(r.width as usize, self.widest_line(), r.width as usize, self.left_col)
+        {
+            draw_bar(buf, r, &bar, false);
         }
     }
 
@@ -459,4 +475,22 @@ pub fn rows_text(buf: &Cells) -> Vec<String> {
             row
         })
         .collect()
+}
+
+/// Draw one scrollbar into `r` (a strip one cell thick).
+fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, vertical: bool) {
+    let thumb = bar.thumb_cells();
+    for i in 0..bar.len {
+        let (x, y) = if vertical { (r.x, r.y + i as u16) } else { (r.x + i as u16, r.y) };
+        let (sym, style) = if bar.arrows && i == 0 {
+            (if vertical { "▲" } else { "◀" }, Style::default())
+        } else if bar.arrows && i + 1 == bar.len {
+            (if vertical { "▼" } else { "▶" }, Style::default())
+        } else if thumb.contains(&i) {
+            (" ", Style::default().add_modifier(Modifier::REVERSED))
+        } else {
+            (if vertical { "│" } else { "─" }, dim())
+        };
+        buf.set_string(x, y, sym, style);
+    }
 }

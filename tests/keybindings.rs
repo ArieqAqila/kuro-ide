@@ -1530,6 +1530,19 @@ fn mouse_probes() -> Vec<(&'static str, Probe)> {
             }),
         ),
         (
+            "m_scrollbar",
+            p(|| {
+                let mut a = modal(&many_lines());
+                render(&mut a);
+                mouse(&mut a, K::Down(MouseButton::Left), 79, 21); // the down arrow
+                mouse(&mut a, K::Up(MouseButton::Left), 79, 21);
+                assert_eq!(a.top_line, 1);
+                mouse(&mut a, K::Down(MouseButton::Left), 79, 15); // the track below the thumb: a page
+                mouse(&mut a, K::Up(MouseButton::Left), 79, 15);
+                assert_eq!(a.top_line, 22);
+            }),
+        ),
+        (
             "m_drag",
             p(|| {
                 let mut a = modal("hello world");

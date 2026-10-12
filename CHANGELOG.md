@@ -28,6 +28,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **Scrollbars**: a vertical bar on the right edge and a horizontal bar at the bottom of the editor, each shown only when
+  the text does not fit. Arrows step by one line or column, clicking the track pages, dragging the thumb scrolls; the
+  thumb is the visible fraction of the content (never a background colour: reverse video thumb, dim track). Turn them
+  off with `editor.scrollbars = false`. Tests: `src/scrollbar.rs`, `tests/ui_scrollbars.rs`, snapshots at 80x24 and 120x40.
 - Lua syntax highlighting and `:setlang lua` (`.lua`, `.rockspec`, `#!…lua` files; `--` and `--[[ ]]` comments).
 - **Live sync** between terminals that have the same file open (like VS Code tabs): unsaved edits appear everywhere,
   undo/redo and save are shared, the cursor and scroll position stay on the same text, and nothing is lost when a kuro
