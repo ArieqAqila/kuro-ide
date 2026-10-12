@@ -49,6 +49,8 @@ pub struct LanguageDef {
     pub filenames: Vec<String>,
     /// `*`, `?` and `[a-z]` patterns matched against the file name (`sct[0-9]*`).
     pub filename_globs: Vec<String>,
+    /// Full regular expressions matched against the whole file name (when a glob is not precise enough).
+    pub filename_regex: Vec<String>,
     pub shebangs: Vec<String>,
     /// A regular expression tried against the first line of the file.
     pub first_line_regex: Option<String>,
@@ -197,6 +199,7 @@ pub fn validate(m: &Manifest, kuro_version: &str) -> Vec<String> {
             ("extensions", &l.extensions),
             ("filenames", &l.filenames),
             ("filename_globs", &l.filename_globs),
+            ("filename_regex", &l.filename_regex),
             ("shebangs", &l.shebangs),
             ("aliases", &l.aliases),
             ("line_comments", &l.line_comments),
@@ -226,6 +229,9 @@ pub fn validate(m: &Manifest, kuro_version: &str) -> Vec<String> {
             if let Some(m) = regex_error(&at("filename_globs"), &super::glob_to_regex(g)) {
                 e.push(m);
             }
+        }
+        for r in &l.filename_regex {
+            e.extend(regex_error(&at("filename_regex"), r));
         }
         if let Some(p) = &l.first_line_regex
             && let Some(m) = regex_error(&at("first_line_regex"), p)

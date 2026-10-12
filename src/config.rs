@@ -178,6 +178,17 @@ impl Default for ColorsConfig {
     }
 }
 
+/// `[ext.<name>]`: the user's settings for one extension.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ExtConfig {
+    /// Role name -> palette slot (0-15, or -1 for the default text colour), overriding the extension's defaults.
+    pub colors: BTreeMap<String, i8>,
+    /// Anything else the extension asks for (lists of files for `names_from`).
+    #[serde(flatten)]
+    pub settings: BTreeMap<String, Vec<String>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -188,6 +199,8 @@ pub struct Config {
     pub ui: UiConfig,
     pub sync: SyncConfig,
     pub colors: ColorsConfig,
+    /// Per-extension settings: `[ext.<name>]` (colour overrides under `colors`, and the settings an extension asks for).
+    pub ext: BTreeMap<String, ExtConfig>,
 }
 
 /// Environment variables the program reads (documented in docs/CUSTOMIZATION.md).
@@ -244,6 +257,26 @@ impl Config {
         };
         let known = option_defaults();
         for (sec, body) in &table {
+            if sec == "ext" {
+                match body {
+                    toml::Value::Table(t) => {
+                        for (name, v) in t {
+                            match v {
+                                toml::Value::Table(inner) => {
+                                    for (k, slot) in inner.get("colors").and_then(|c| c.as_table()).into_iter().flatten() {
+                                        if !slot.as_integer().is_some_and(|n| (-1..=15).contains(&n)) {
+                                            warnings.push(format!("ext.{name}.colors.{k} must be a palette slot 0-15 or -1; ignored"));
+                                        }
+                                    }
+                                }
+                                _ => warnings.push(format!("`ext.{name}` should be a table; ignored")),
+                            }
+                        }
+                    }
+                    _ => warnings.push("`ext` should be a table; ignored".into()),
+                }
+                continue;
+            }
             let prefix = format!("{sec}.");
             if !known.keys().any(|k| k.starts_with(&prefix)) {
                 warnings.push(format!("unknown config section [{sec}] ignored"));
@@ -268,6 +301,7 @@ impl Config {
             ui: section(&table, "ui", &mut warnings),
             sync: section(&table, "sync", &mut warnings),
             colors: section(&table, "colors", &mut warnings),
+            ext: section(&table, "ext", &mut warnings),
         };
         cfg.validate(&mut warnings);
         (cfg, warnings)

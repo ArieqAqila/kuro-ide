@@ -19,6 +19,8 @@ pub enum Kind {
     /// JSON object keys and similar names.
     Key,
     Operator,
+    /// A colour role defined by the current language's extension: index into its `ExtData::roles`.
+    Ext(u8),
     /// A bracket; the payload is its nesting depth (0 = outermost).
     Bracket(u8),
     /// An unmatched or mismatched bracket.
@@ -67,6 +69,12 @@ pub struct LangSpec {
     pub preprocessor: bool,
     /// Markup languages (HTML, XML, PHP, CSS) use a small state machine that hands regions to other languages.
     pub markup: Option<Markup>,
+    /// A string that is not closed on its line continues on the next one (only for the quotes in `string_quotes`).
+    pub multiline_strings: bool,
+    /// Extra names `:setlang` accepts (extension languages; the built-in aliases live in `by_name`).
+    pub aliases: &'static [&'static str],
+    /// Rules, declared names and colour roles that come from an extension (see `src/ext/lang.rs`).
+    pub ext: Option<&'static crate::ext::lang::ExtData>,
 }
 
 /// Which markup tokenizer a language uses (see `src/markup.rs`).
@@ -107,6 +115,9 @@ pub(crate) const BASE: LangSpec = LangSpec {
     lifetimes: false,
     preprocessor: false,
     markup: None,
+    multiline_strings: false,
+    aliases: &[],
+    ext: None,
 };
 
 pub static PLAIN: LangSpec = BASE;
@@ -523,7 +534,15 @@ pub fn all_modes() -> Vec<&'static LangSpec> {
 
 /// Look a mode up by name or common alias, ignoring case (`:setlang`).
 pub fn by_name(name: &str) -> Option<&'static LangSpec> {
+    by_name_in(&[], name)
+}
+
+/// Like [`by_name`], also knowing the languages of installed extensions.
+pub fn by_name_in(ext: &[&'static LangSpec], name: &str) -> Option<&'static LangSpec> {
     let n = name.trim().to_ascii_lowercase();
+    if let Some(l) = ext.iter().find(|l| l.name.to_ascii_lowercase() == n || l.aliases.iter().any(|a| a.to_ascii_lowercase() == n)) {
+        return Some(l);
+    }
     let alias = match n.as_str() {
         "text" | "plain" | "plaintext" | "txt" | "none" => "plain text",
         "sh" | "bash" | "zsh" | "fish" | "ksh" => "shell",
@@ -546,6 +565,34 @@ pub fn by_name(name: &str) -> Option<&'static LangSpec> {
 }
 
 pub fn detect(path: Option<&Path>, first_line: &str) -> &'static LangSpec {
+    detect_in(&[], path, first_line)
+}
+
+/// Pick the language for a file. Order: file names (extension rules, then built-in), file types and `#!` lines of extension
+/// languages, the built-in file types and `#!` lines, and last a content marker on the first line (extension languages), so a marker
+/// can never take over a file that has a known file type.
+pub fn detect_in(ext: &[&'static LangSpec], path: Option<&Path>, first_line: &str) -> &'static LangSpec {
+    if !ext.is_empty() {
+        let name = path.and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("");
+        let file_ext = path.and_then(|p| p.extension()).and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let data = |l: &&&'static LangSpec| l.ext;
+        if !name.is_empty() {
+            if let Some(l) = ext
+                .iter()
+                .find(|l| l.filenames.contains(&name) || data(l).is_some_and(|d| d.filename_globs.iter().any(|g| g.is_match(name))))
+            {
+                return l;
+            }
+            if let Some(l) = LANGS.iter().find(|l| l.filenames.contains(&name)) {
+                return l;
+            }
+        }
+        if let Some(l) =
+            ext.iter().find(|l| (!file_ext.is_empty() && l.extensions.contains(&file_ext.as_str())) || shebang_matches(l, first_line))
+        {
+            return l;
+        }
+    }
     if let Some(p) = path {
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -555,21 +602,30 @@ pub fn detect(path: Option<&Path>, first_line: &str) -> &'static LangSpec {
             }
         }
     }
-    if let Some(rest) = first_line.strip_prefix("#!") {
-        // match the interpreter's basename, e.g. `/usr/bin/env python3`
-        let words: Vec<&str> = rest.split_whitespace().collect();
-        let interp = words.iter().rev().find(|w| !w.starts_with('-')).copied().unwrap_or("");
-        let base = interp.rsplit('/').next().unwrap_or("");
-        for l in LANGS {
-            if l.shebangs
-                .iter()
-                .any(|s| base == *s || (base.starts_with(s) && base[s.len()..].chars().all(|c| c.is_ascii_digit() || c == '.')))
-            {
-                return l;
-            }
+    for l in LANGS {
+        if shebang_matches(l, first_line) {
+            return l;
         }
     }
+    // last: a content marker on the first line, for files no file type claims (extension-less files, new buffers)
+    if let Some(l) = ext.iter().find(|l| l.ext.and_then(|d| d.first_line.as_ref()).is_some_and(|r| r.is_match(first_line))) {
+        return l;
+    }
     &PLAIN
+}
+
+/// Does a `#!` first line name an interpreter of `l`? (the basename, so `/usr/bin/env python3` matches `python`)
+fn shebang_matches(l: &LangSpec, first_line: &str) -> bool {
+    let Some(rest) = first_line.strip_prefix("#!") else { return false };
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let interp = words.iter().rev().find(|w| !w.starts_with('-')).copied().unwrap_or("");
+    let base = interp.rsplit('/').next().unwrap_or("");
+    l.shebangs.iter().any(|s| base == *s || (base.starts_with(s) && base[s.len()..].chars().all(|c| c.is_ascii_digit() || c == '.')))
+}
+
+/// Every selectable mode including the languages of extensions (listed last).
+pub fn all_modes_in(ext: &[&'static LangSpec]) -> Vec<&'static LangSpec> {
+    all_modes().into_iter().chain(ext.iter().copied()).collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -660,7 +716,93 @@ pub fn highlight(spec: &LangSpec, lines: &[String]) -> Vec<Vec<Kind>> {
             out[l][c] = Kind::BracketError;
         }
     }
+    if let Some(e) = spec.ext {
+        apply_ext(e, lines, &mut out);
+    }
     out
+}
+
+/// Extension rules on top of the generic pass: regex rules (in their section), then the names declared in the file and the names read
+/// from the user's own files. None of them overrides a comment, a string or a bracket.
+fn apply_ext(e: &crate::ext::lang::ExtData, lines: &[String], out: &mut [Vec<Kind>]) {
+    use std::collections::HashMap;
+    let char_index = |line: &str, byte: usize| line[..byte].chars().count();
+    let paint = |kinds: &mut [Kind], a: usize, b: usize, k: Kind| {
+        for x in kinds.iter_mut().take(b).skip(a) {
+            if !matches!(*x, Kind::Comment | Kind::String | Kind::Bracket(_) | Kind::BracketError) {
+                *x = k;
+            }
+        }
+    };
+    // declared names (per file)
+    let mut declared: HashMap<String, crate::ext::lang::Role> = HashMap::new();
+    for d in &e.declares {
+        let mut in_decl = false;
+        for (i, l) in lines.iter().enumerate() {
+            if e.section_header.is_match(l) {
+                in_decl = d.section.is_match(l);
+                continue;
+            }
+            if in_decl
+                && !matches!(out[i].first(), Some(Kind::Comment))
+                && let Some(c) = d.name.captures(l)
+                && let Some(m) = c.get(1)
+            {
+                declared.entry(m.as_str().to_string()).or_insert(d.role);
+            }
+        }
+    }
+    // regex rules
+    for r in &e.rules {
+        let mut active = r.in_section.is_none();
+        for (i, l) in lines.iter().enumerate() {
+            if let Some(start) = &r.in_section {
+                if start.is_match(l) {
+                    active = true;
+                } else if r.end_section.as_ref().map_or(e.section_header.is_match(l), |end| end.is_match(l)) {
+                    active = false;
+                }
+                if !active {
+                    continue;
+                }
+            }
+            for m in r.pattern.find_iter(l) {
+                if m.is_empty() {
+                    continue;
+                }
+                let (a, b) = (char_index(l, m.start()), char_index(l, m.end()));
+                paint(&mut out[i], a, b, r.role.kind());
+            }
+        }
+    }
+    // names: identifiers that are still plain
+    let external = e.external.read().unwrap();
+    if declared.is_empty() && external.is_empty() {
+        return;
+    }
+    for (i, l) in lines.iter().enumerate() {
+        let chars: Vec<char> = l.chars().collect();
+        let mut j = 0;
+        while j < chars.len() {
+            if is_ident_start(chars[j]) && (j == 0 || !is_ident(chars[j - 1])) {
+                let start = j;
+                while j < chars.len() && is_ident(chars[j]) {
+                    j += 1;
+                }
+                if out[i][start] == Kind::Plain {
+                    let word: String = chars[start..j].iter().collect();
+                    if let Some(role) = declared.get(&word).or_else(|| external.get(&word)) {
+                        let k = role.kind();
+                        for x in &mut out[i][start..j] {
+                            *x = k;
+                        }
+                    }
+                }
+            } else {
+                j += 1;
+            }
+        }
+    }
 }
 
 pub(crate) fn fill(kinds: &mut [Kind], from: usize, to: usize, k: Kind) {
@@ -854,6 +996,9 @@ fn highlight_line(
                     i += 1;
                 }
                 i += 1;
+            }
+            if i >= n && spec.multiline_strings {
+                state = State::Multi { quote: c, triple: false };
             }
             i = (i + 1).min(n);
             let mut kind = Kind::String;

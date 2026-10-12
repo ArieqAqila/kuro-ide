@@ -1,0 +1,44 @@
+/**************************************************************/
+SCREEN 100 QUERY_TYPE s.Demo
+SCR_FILE dmo
+SCR_LOGFLD dmokode
+SCR_JOIN_FILE1 dmoidx dmokode NOCHANGE
+
+LOCAL
+PGM_FIELDS
+lcount		STRING	21
+lname		STRING	11
+ltotal		NUMERIC	8
+
+CALCS()
+cready		lcount==1 && dmostatus!="X"
+cpick		lname=="A" || (ltotal>=10 && ltotal<=20)
+
+MAP(mfill)
+dmoname		lname		REPLACE_IF cready
+dmoamount	ltotal		DO_CALC
+
+DBCALCS(djoin)
+	DBC_COMMAND	JOIN
+	DBC_TARGET	dmoidx dmokode
+	DBC_MAP		mfill
+
+IMAGE(master)
+/---------------------------------\
+| i.Code :________  t.Name :____ |
+\---------------------------------/
+
+FIELD(master)
+dmokode      ALLCAPS SCROLL    INPUTRI  1
+dmoname      PROTECT           INPUTRI  2
+
+HOOKS(master)
+AFTER_INPUT cur_field=dmokode DO_LIB_IF cready ap_run(lcount,&ltotal,"a note
+spanning lines with cready and lcount")
+/* a comment that
+spans lines with cpick */
+#lname dmoname REPLACE
+DEFAULTS(master)
+lname INIT {cready}
+lother INIT 5
+END_SCREEN

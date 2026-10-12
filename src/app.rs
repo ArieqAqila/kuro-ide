@@ -175,6 +175,12 @@ pub struct App {
     pub lang: &'static LangSpec,
     /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
     pub lang_override: Option<&'static LangSpec>,
+    /// Language modes of installed extensions (see `src/ext`).
+    pub ext_langs: Vec<&'static LangSpec>,
+    /// Styles of the current language's own colour roles, resolved from the extension's defaults and `[ext.<name>.colors]`.
+    pub ext_styles: Vec<ratatui::style::Style>,
+    /// Languages whose `names_from` files have been read (done the first time the language is shown).
+    ext_names_loaded: std::collections::HashSet<String>,
     pub picker: Option<Picker>,
     /// Does the terminal speak the kitty keyboard protocol? `None` until detected (tests, startup).
     pub kitty: Option<bool>,
@@ -308,6 +314,9 @@ impl App {
             syn: None,
             lang,
             lang_override: None,
+            ext_langs: vec![],
+            ext_styles: vec![],
+            ext_names_loaded: Default::default(),
             picker: None,
             kitty: None,
             kitty_notice_shown: false,
@@ -325,8 +334,53 @@ impl App {
 
     /// Re-derive the language: the manual `:setlang` choice wins over detection by extension.
     pub fn update_lang(&mut self) {
-        self.lang = self.lang_override.unwrap_or_else(|| syntax::detect(self.buffer.path.as_deref(), &first_line(&self.buffer)));
+        self.lang = self
+            .lang_override
+            .unwrap_or_else(|| syntax::detect_in(&self.ext_langs, self.buffer.path.as_deref(), &first_line(&self.buffer)));
+        self.refresh_ext_styles();
         self.maybe_kitty_notice();
+    }
+
+    /// Read the files the user listed for this language's `names_from` (once), e.g. ksystem's table headers.
+    fn load_ext_names(&mut self) {
+        let Some(e) = self.lang.ext else { return };
+        if e.names_from.is_empty() || !self.ext_names_loaded.insert(self.lang.name.to_string()) {
+            return;
+        }
+        let mut names = std::collections::HashMap::new();
+        let mut warnings = vec![];
+        for src in &e.names_from {
+            let patterns = self.cfg.ext.get(&e.ext_name).and_then(|c| c.settings.get(&src.setting)).cloned().unwrap_or_default();
+            crate::ext::names::load(&patterns, &src.parser, src.role, &mut names, &mut warnings);
+        }
+        crate::ext::lang::set_external_names(self.lang, names);
+        self.warnings.extend(warnings.into_iter().map(|w| format!("extension {}: {w}", e.ext_name)));
+        self.syn = None;
+    }
+
+    /// Install the languages of loaded extensions (and re-detect the current file's language).
+    pub fn set_ext_langs(&mut self, langs: Vec<&'static LangSpec>) {
+        self.ext_langs = langs;
+        self.update_lang();
+        self.syn = None;
+    }
+
+    /// Resolve the colour of every role of the current language: the user's `[ext.<name>.colors]`, else the extension's default.
+    fn refresh_ext_styles(&mut self) {
+        self.load_ext_names();
+        self.ext_styles = match self.lang.ext {
+            Some(e) => {
+                let user = self.cfg.ext.get(&e.ext_name).map(|c| &c.colors);
+                e.roles
+                    .iter()
+                    .map(|r| {
+                        let slot = user.and_then(|u| u.get(&r.name)).copied().unwrap_or(r.default_slot);
+                        crate::render::slot_style(slot)
+                    })
+                    .collect()
+            }
+            None => vec![],
+        };
     }
 
     /// True while edits are refused: a SQL buffer with no database connection
@@ -2342,13 +2396,13 @@ impl App {
             self.set_lang(None);
             return self.flash(format!("language: auto-detected ({})", self.lang.name));
         }
-        match syntax::by_name(arg) {
+        match syntax::by_name_in(&self.ext_langs, arg) {
             Some(l) => {
                 self.set_lang(Some(l));
                 self.flash(format!("language: {}", l.name));
             }
             None => {
-                let names: Vec<&str> = syntax::all_modes().iter().map(|l| l.name).collect();
+                let names: Vec<&str> = syntax::all_modes_in(&self.ext_langs).iter().map(|l| l.name).collect();
                 self.flash(format!("unknown language {arg:?}; use one of: auto, {}", names.join(", ")));
             }
         }
@@ -2356,7 +2410,7 @@ impl App {
 
     fn open_lang_picker(&mut self) {
         let mut items = vec![PickerItem { label: "Auto-detect".into(), detail: "by file extension".into(), value: "auto".into() }];
-        for l in syntax::all_modes() {
+        for l in syntax::all_modes_in(&self.ext_langs) {
             let exts = if l.extensions.is_empty() {
                 "no highlighting".to_string()
             } else {

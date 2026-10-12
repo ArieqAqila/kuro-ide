@@ -1,0 +1,107 @@
+# ksystem: the screen / program definition language of the ksystem system.
+# Written from a read-only study of a ksystem source tree (see README.md); nothing of that code is included here.
+
+format = 1
+name = "ksystem"
+version = "0.1.0"
+kuro = ">=0.1, <0.2"
+description = "ksystem screen definition language: sections, actions, field attributes, local variables, calcs, file fields and indexes"
+license = "MIT"
+
+[[language]]
+name = "ksystem"
+aliases = ["ks"]
+
+# ksystem screens are files named sct<number> or tmp_<name> with no extension; .var files are variable tables.
+# Files under a `scan` folder have no usable name, so they are recognised by how they start (checked last, so a file
+# with a known type such as .html, .c or .sh is never taken over).
+extensions = ["var"]
+filename_regex = ['^sct[0-9]+$', '^tmp_[A-Za-z0-9_]+$']
+first_line_regex = '^(SCREEN\s|IMAGE\(|MAP\(|FIELD\(|CALCS\(|DBCALCS\(|/\*{4,})'
+
+# comments are /* ... */ only; strings are "..." and may run over several lines (embedded SQL)
+block_comment = ["/*", "*/"]
+string_quotes = ["\""]
+multiline_strings = true
+operators = ["==", "!=", "<>", "<=", ">=", "&&", "||", "<", ">", "=", "+", "-", "*", "/", "?", "!"]
+brackets = true
+bracket_errors = false
+
+# section words, actions and hooks
+keywords = [
+  "SCREEN", "END_SCREEN", "QUERY_TYPE", "LOCAL", "PGM_FIELDS",
+  "MAP", "DBCALCS", "CALCS", "SPCALCS", "IMAGE", "FIELD", "FIELDS", "EDITS", "EDIT", "DEFAULTS", "DEFAULT", "HOOKS", "SUBFILE",
+  "POSTING", "PERMIT", "RTREE", "USES_SCRIPT", "HELP", "HELPS", "SFL_TEMPLATE", "SFL_HEADER", "SFL_FOOTER", "SFL_MAP", "SFL_MAP_MAP",
+  "BEFORE_INPUT", "AFTER_INPUT", "AFTER_DETAIL", "HKMSG", "HKCURSOR", "CLICKED",
+  "IF", "ELSE",
+  "REPLACE", "REPLACE_IF", "NO_REPLACE", "DO_CALC", "DO_CALC_IF", "DO_LIB", "DO_LIB_IF", "DO_MAP", "DO_SCAN", "DO_SCAN_IF",
+  "DO_SKIP_IF", "DO_SPCALCS", "DO_FLY", "DO_FLY_IF", "SHOW", "SHOW_SFL", "INIT", "INIT_ADD", "INIT_UPDATE", "INIT_QUERY",
+  "DFALT_LIST", "DFALT_SCAN", "DFALT_SCAN_BLANKS",
+]
+# field attributes, types and values of DBC_COMMAND
+builtins = [
+  "STRING", "NUMERIC", "INT2", "INT4", "DATE", "TIME",
+  "INPUTRI", "PROTECT", "QPROTECT", "NOCHANGE", "ALLCAPS", "SCROLL", "TEXTAREA", "NOLIMIT", "UNSEEN", "TOMBOL", "CHECKBOX", "DIGITS",
+  "MAND_PLUS", "MANDATORY", "MANDATORY_IF", "VALIDATE", "VALIDATE_IF", "DUPKEY",
+  "JOIN", "ADD", "ADD_SUB", "ADD_NO_CLEAR", "UPDATE", "DELETE", "UPDATE_RANGE", "DELETE_RANGE",
+]
+literals = ["BLANKS", "NULL", "NONE"]
+
+[language.roles]
+# default palette slots; the terminal theme decides what they look like (14 bright cyan, 11 bright yellow, 10 bright green, 13 bright magenta)
+local = 14
+calc  = 11
+field = 10
+index = 13
+
+# word families: SFL_*, DBC_*, PST_*, PMT_*, SCR_*, RT_*, SCAN_*
+[[language.rule]]
+pattern = '\b(?:SFL|DBC|PST|PMT|SCR|RT|SCAN)_[A-Z0-9_]+\b'
+role = "keyword"
+
+# a section header: NAME( at the start of a line
+[[language.rule]]
+pattern = '^[A-Z][A-Z0-9_]*\('
+role = "keyword"
+
+# a variable passed by address, and a template substitution
+[[language.rule]]
+pattern = '&[A-Za-z_][A-Za-z0-9_]*'
+role = "builtin"
+
+[[language.rule]]
+pattern = '\{[A-Za-z_][A-Za-z0-9_]*\}'
+role = "literal"
+
+# inside IMAGE(...) blocks: i.Label / t.Label and the _____ input slots
+[[language.rule]]
+pattern = '\b[it]\.[A-Za-z0-9_]+'
+role = "key"
+in_section = '^IMAGE\('
+
+[[language.rule]]
+pattern = '_{2,}'
+role = "literal"
+in_section = '^IMAGE\('
+
+# local variables: names starting with l under PGM_FIELDS; calcs: names starting with c under CALCS()
+[[language.declares]]
+section = '^PGM_FIELDS'
+name = '^\s*(l[A-Za-z0-9_]*)\b'
+role = "local"
+
+[[language.declares]]
+section = '^CALCS\('
+name = '^\s*(c[A-Za-z0-9_]*)\b'
+role = "calc"
+
+# file fields and indexes come from the table headers the user lists in config.toml: [ext.ksystem] headers = ["/path/*.h"]
+[[language.names_from]]
+setting = "headers"
+parser = "c-struct-members"
+role = "field"
+
+[[language.names_from]]
+setting = "headers"
+parser = "c-negative-defines"
+role = "index"

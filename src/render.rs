@@ -35,15 +35,17 @@ pub fn ansi_color(slot: i8) -> Option<Color> {
     })
 }
 
-fn slot_style(slot: i8) -> Style {
+pub fn slot_style(slot: i8) -> Style {
     match ansi_color(slot) {
         Some(c) => Style::default().fg(c),
         None => Style::default(),
     }
 }
 
-pub fn kind_style(k: Kind, c: &ColorsConfig) -> Style {
+/// The style of a token kind. `ext` holds the styles of the current language's own roles (`Kind::Ext(i)` is `ext[i]`).
+pub fn kind_style(k: Kind, c: &ColorsConfig, ext: &[Style]) -> Style {
     match k {
+        Kind::Ext(i) => ext.get(i as usize).copied().unwrap_or_default(),
         Kind::Plain => Style::default(),
         Kind::Keyword => slot_style(c.keyword),
         Kind::Builtin => slot_style(c.builtin),
@@ -159,6 +161,7 @@ impl App {
         let n_matches = if self.find.open { self.find.matches.clone() } else { vec![] };
         let kinds = self.syntax_kinds().clone();
         let colors = self.cfg.colors.clone();
+        let ext_styles = self.ext_styles.clone();
         let len = self.buffer.len_chars();
 
         for row in 0..h {
@@ -199,7 +202,7 @@ impl App {
                     break;
                 }
                 let abs = ls + ci;
-                let mut style = line_kinds.and_then(|k| k.get(ci)).map(|k| kind_style(*k, &colors)).unwrap_or_default();
+                let mut style = line_kinds.and_then(|k| k.get(ci)).map(|k| kind_style(*k, &colors, &ext_styles)).unwrap_or_default();
                 if n_matches[first_match..].iter().take_while(|m| m.start < le).any(|m| m.start <= abs && abs < m.end) {
                     style = style.add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
                 }

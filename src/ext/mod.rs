@@ -4,7 +4,9 @@
 //! extensions are *sealed* (HMAC with a per-user key), so only extensions installed by kuro itself load; there is deliberately no way
 //! to load one from a path.
 
+pub mod lang;
 pub mod manifest;
+pub mod names;
 pub mod seal;
 pub mod store;
 pub mod version;
