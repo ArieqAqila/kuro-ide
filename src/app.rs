@@ -214,6 +214,20 @@ pub fn col_at_x(line: &str, x: usize, tab: usize) -> usize {
     line.chars().count()
 }
 
+/// Like [`col_at_x`], but a column in the right half of a wide character or tab goes after it: the nearest
+/// character boundary, which is what a drag should select up to (VS Code behaves the same way).
+pub fn boundary_at_x(line: &str, x: usize, tab: usize) -> usize {
+    let mut cx = 0;
+    for (i, c) in line.chars().enumerate() {
+        let w = char_cells(c, cx, tab);
+        if x < cx + w.max(1) {
+            return if w > 1 && (x - cx) * 2 >= w { i + 1 } else { i };
+        }
+        cx += w;
+    }
+    line.chars().count()
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Motion {
     Left,
@@ -2555,6 +2569,12 @@ impl App {
             let cell = app.left_col + x.saturating_sub(l.text.x + l.gutter_w) as usize;
             app.buffer.pos_of(line, col_at_x(&app.buffer.line(line), cell, tab))
         };
+        // where a drag selects up to: the nearest character boundary
+        let boundary_at = |app: &App| {
+            let line = line_at(app);
+            let cell = app.left_col + x.saturating_sub(l.text.x + l.gutter_w) as usize;
+            app.buffer.pos_of(line, boundary_at_x(&app.buffer.line(line), cell, tab))
+        };
         match m.kind {
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if shift => {
                 let d = self.cfg.editor.scroll_lines * 2;
@@ -2596,7 +2616,7 @@ impl App {
                         self.buffer.anchor = None;
                         self.buffer.cursor = pos;
                         self.buffer.set_goal();
-                        self.drag_origin = Some(pos);
+                        self.drag_origin = Some(boundary_at(self));
                         self.clamp_normal();
                     }
                     2 => {
@@ -2615,7 +2635,7 @@ impl App {
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 if let Some(o) = self.drag_origin {
-                    let pos = pos_at(self);
+                    let pos = boundary_at(self);
                     self.buffer.anchor = Some(o);
                     self.buffer.cursor = pos;
                     self.follow = true;

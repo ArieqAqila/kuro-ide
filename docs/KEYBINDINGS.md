@@ -220,7 +220,7 @@ since kuro's startup check is the authority. Without the protocol:
 | Keys | Action |
 |---|---|
 | `Click` | Place the cursor |
-| `Drag` | Select |
+| `Drag` | Select up to the nearest character boundary: past the end of a line selects through its trailing spaces and tabs, and the right half of a tab or wide character includes it |
 | `Double-click` | Select the word |
 | `Triple-click` | Select the line |
 | `Click the line number` | Select the whole line |

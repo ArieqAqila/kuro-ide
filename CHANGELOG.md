@@ -5,6 +5,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Mouse selection (drag) now extends to the true end of the line, including trailing spaces and tabs, in every mode,
+  and always matches the reverse-video highlight. A drag selects up to the nearest character *boundary*: dragging
+  past the end of a line selects the whole line, and ending on the right half of a tab or a wide character includes it
+  (before, the tab or the last character was only included once the mouse was past it). Tests: `tests/ui_mouse_select.rs`.
 - Shift + arrows, Home/End and PageUp/PageDown now select in **normal mode** (they used to run the plain vi motion and
   select nothing); Shift+Ctrl+arrows select by word. A selection can be extended or shrunk in both directions.
   Regression tests: `tests/ui_select_keys.rs`.
