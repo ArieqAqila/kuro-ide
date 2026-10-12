@@ -60,11 +60,20 @@ first time kuro records an edit of a file it stores that content as the file's *
 `kuro history delete`; closing every terminal and editing again the next day does **not** move it. One baseline per file, shared by
 all terminals showing it (opening a file in 10 terminals is still one history; one hard undo undoes all of their edits).
 
-**The one automatic thing, and why:** if the file is changed *outside kuro* between two sessions (a `git pull`, another editor), the
-old baseline no longer describes this file's own history, and restoring it would silently throw that outside work away. So when
-kuro opens a file whose disk hash differs from the hash kuro last recorded for it, it **starts a new baseline** from the content on
-disk and keeps the old one as a separate entry (`kuro history list` shows both). Nothing is deleted. The same external-change
-warning still guards the restore itself.
+**Files edited elsewhere (decided).** A file is often edited with kuro *and* another editor, and saved outside kuro. kuro treats that as
+part of the same history, not as a new one:
+
+* **While kuro has the file open**, it notices the outside save (live sync already does: unsaved-edit-free terminals reload it, terminals
+  with unsaved edits get the existing conflict message) and records an `external` line: the new disk hash and the time.
+* **While kuro was closed**, the next time it opens the file it compares the disk hash with the last one it recorded; a difference is
+  recorded the same way (`external`, time unknown beyond "between sessions").
+* The **baseline does not move**: `:hardundo` still goes back to the original. Because the outside edits are undone too, the popup
+  marks such a file `⚠ also changed outside kuro` and the second confirmation (below) is required. So an outside edit is never
+  thrown away silently, but you *can* throw it away on purpose.
+* After a restore, every terminal that has the file open reloads it (as for any outside change), so all views end up in sync with the
+  restored file, and the history gains an `restored` line (the baseline stays, so you may undo again later).
+
+`kuro history show <id>` lists these lines (`edit`, `external`, `restored`) with their times.
 
 **Scope:** `:hardundo` acts on the file in the current terminal (all its terminals together). `:hardundo all` lists every file
 that has a baseline different from its current content and restores the ones you confirm. (This default is mine: say if you want

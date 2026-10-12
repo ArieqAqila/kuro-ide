@@ -57,22 +57,24 @@ line_comments = ["//"]         # block_comment = ["/*", "*/"], string_quotes, op
 
 [[language.rule]]              # extra rules for things a word list cannot express
 pattern = '\$\{[^}]*\}'        # Rust `regex` syntax: linear time, no backtracking blow-ups
-role = "builtin"               # one of: keyword builtin literal string number comment key operator variable variable2
+role = "builtin"               # a core role (keyword builtin literal string number comment key operator) or one of this extension's own roles
 
 [[language.declares]]          # names declared in one place and coloured wherever they are used in the file (ksystem needs this)
 section = '^PGM_FIELDS'        # the declaration is in lines after a line matching this, up to the next section header
 name = '^(l[A-Za-z0-9_]*)'     # regex on the line; group 1 is the declared name
-role = "variable"              # every later or earlier use of that exact name gets this role
+role = "local"                 # an own role (declared below): every use of that exact name gets this role
 
 [[language.names_from]]        # names that live in the *user's own files* (ksystem: the table headers); see below
 setting = "headers"            # the user lists the files in config.toml: [ext.ksystem] headers = ["/path/*.h"]
-parser = "c-struct-members"    # one of a fixed set of built-in parsers (never code from the extension)
-role = "variable3"             # every occurrence of a name found there
+parser = "c-struct-members"    # one of a fixed set of built-in parsers (never code from the extension):
+                               #   c-struct-members  `TYPE name;` / `TYPE name[N];` inside typedef struct
+                               #   c-negative-defines  `#define name -1601` (ksystem index and table ids)
+role = "field"                 # every occurrence of a name found there
 ```
 
 **What an extension may contain:** only `[[language]]` tables (and, later, other declarative tables under new `format`
-numbers). **Colours are roles, never colours:** the only way to colour text is `role = …` (eleven roles: the eight above plus `variable`,
-`variable2` and `variable3`, three new `[colors]` entries added for this), which `[colors]` maps to ANSI
+numbers). **Colours are roles, never colours:** the only way to colour text is `role = …` (the eight core roles, plus any **named roles the extension declares itself**, see below), which `[colors]` /
+`[ext.<name>.colors]` map to ANSI
 palette slots 0-15 or the default foreground, so extension text follows the terminal theme exactly like the core editor.
 There is no field that can express RGB, a 256-colour index or a background, and unknown keys are rejected with a message
 naming the key.
@@ -105,6 +107,32 @@ kuro ext remove ksystem                 # delete the files and the record
 (their strings are leaked once per process, bounded by the limits above), so highlighting, bracket colours, snapshots and the
 colour-rule tests apply to them unchanged. `[[language.rule]]` adds an optional regex pass to the generic tokenizer.
 
+## Roles an extension declares, and how the user maps them
+
+An extension may declare **named roles** with a default palette slot; they are the extension's own colour vocabulary:
+
+```toml
+[language.roles]               # name = default ANSI slot (0-15) or -1 for the terminal's default text colour
+local = 14
+calc  = 11
+field = 10
+index = 13
+```
+
+The user remaps them per extension, in their own config, with the same slot numbers `[colors]` uses (so they follow the terminal theme
+like everything else; no RGB, no 256-colour, no background):
+
+```toml
+# ~/.config/kuro/config.toml
+[ext.ksystem.colors]
+local = 6
+index = -1                     # -1: the terminal's default text colour
+```
+
+Unknown role names in that table are a `:warnings` entry. For ksystem the defaults are four *distinct* bright slots (14, 11, 10, 13)
+so that locals, calcs, file fields and indexes tell apart out of the box, and since a slot is the terminal theme's own colour, light
+and dark themes each pick a legible one.
+
 ## Names from the user's own files (`names_from`)
 
 ksystem file fields are defined in C headers (`/home/ksystem/*.h`, ≈140 files, ≈5 000 members, e.g. `TEXT almnama[51];`). Shipping that list
@@ -117,7 +145,7 @@ headers = ["/home/ksystem/*.h"]
 ```
 
 The extension may only *declare* that it wants names from a setting and which **built-in parser** reads them (`c-struct-members`:
-`TYPE name;` / `TYPE name[N];` inside `typedef struct`, all other lines ignored). Hard limits: the paths come only from the user's
+`TYPE name;` / `TYPE name[N];` inside `typedef struct`, all other lines ignored). `c-negative-defines` finds the **index** (and table id) names in the same headers (`#define almprmidx -1601`). Hard limits: the paths come only from the user's
 config (an extension cannot name a path), regular files only, at most 4 000 files / 64 MiB / 100 000 names, read-only, nothing is ever
 executed, and a missing or unreadable path is a `:warnings` entry, never a failure. Names are cached in `~/.local/state/kuro/` keyed by
 file size and modification time and read lazily the first time a ksystem file is shown.

@@ -62,7 +62,8 @@ A line-oriented, case-sensitive definition language. A file is a sequence of **s
 `/home/ksystem/*.h` (139 files, 6.9 MB). Most are table definitions: `typedef struct alm { TEXT almdata[11]; LONG almprm; double almlat; … }`
 (types `TEXT`, `LONG`, `double`, `COUNT`), one header per table, **every member prefixed with the file's name** (`alm.h` → `almdata`,
 `almnama`, …), plus a block of index names (`almprmidx`, …). `error.h` and `posting.h` are logs/text, not definitions. Fields appear in ksystem
-files as the first column of `FIELD(…)`/`MAP(…)` rows and in conditions, so they get a **third colour**.
+files as the first column of `FIELD(…)`/`MAP(…)` rows and in conditions, so they get a **third colour**; the index names
+(`#define almprmidx -1601`, listed at the top of each header in an `INDEX_INFORMATION` block) get a **fourth**.
 
 ## What this means for the extension
 
