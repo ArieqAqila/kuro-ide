@@ -126,4 +126,4 @@ paste uses your terminal's paste. Force one with `[clipboard] backend`.
 ## More
 
 [docs/TESTING.md](docs/TESTING.md) (`make test`, `make report`) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-[CHANGELOG.md](CHANGELOG.md)
+[CHANGELOG.md](CHANGELOG.md) ([detailed](docs/CHANGELOG-DETAILED.md))
