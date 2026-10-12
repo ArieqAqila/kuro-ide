@@ -5,6 +5,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- Moving up/down with the arrow keys (and `j`/`k`, PageUp/PageDown, Ctrl+D/U) keeps the **display** column, not the character
+  index: a tab counts as many cells as it expands to (`editor.tab_width`) and wide characters count as their width, so
+  the cursor no longer lands before `DO` on the next line of tab-separated fields. A column inside a tab or wide
+  character goes to the nearer edge. Regression tests: `tests/ui_cursor.rs`.
 - Line numbers no longer restart from 1 above and below the cursor line while editing. Root cause:
   `editor.relative_numbers` defaulted to `true`, so every other line showed its distance from the cursor line.
   Absolute numbers are now the default (relative is opt-in). Regression tests:

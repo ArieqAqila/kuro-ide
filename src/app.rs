@@ -237,7 +237,8 @@ struct Target {
 }
 
 impl App {
-    pub fn new(cfg: Config, buffer: Buffer, clip: Box<dyn Clipboard>) -> App {
+    pub fn new(cfg: Config, mut buffer: Buffer, clip: Box<dyn Clipboard>) -> App {
+        buffer.tab_width = cfg.editor.tab_width.max(1);
         let lang = syntax::detect(buffer.path.as_deref(), &first_line(&buffer));
         let mode = if cfg.editor.modal { Mode::Normal } else { Mode::Insert };
         let find = FindBar::new(&cfg.find);
@@ -318,6 +319,7 @@ impl App {
     /// tried to change it, undo every side effect (cursor, selection, mode) and explain why.
     fn guarded(&mut self, f: impl FnOnce(&mut Self)) {
         let saved = (self.buffer.cursor, self.buffer.anchor, self.buffer.goal_col, self.mode);
+        self.buffer.tab_width = self.cfg.editor.tab_width.max(1);
         self.buffer.read_only = self.edit_blocked();
         self.buffer.blocked_attempt = false;
         f(self);
@@ -497,7 +499,7 @@ impl App {
         }
         self.buffer.cursor = pos.min(self.buffer.len_chars());
         if !keep_goal {
-            self.buffer.goal_col = self.buffer.cursor_line_col().1;
+            self.buffer.set_goal();
         }
         self.clamp_normal();
     }
@@ -784,7 +786,7 @@ impl App {
         let (start, end) = (st.sug.prefix_start, self.buffer.cursor);
         self.buffer.replace(start..end, &word);
         self.buffer.cursor = start + word.chars().count();
-        self.buffer.goal_col = self.buffer.cursor_line_col().1;
+        self.buffer.set_goal();
         self.buffer.break_group();
         self.suggest_dismissed = Some(self.buffer.version);
     }
@@ -982,8 +984,8 @@ impl App {
                 (if b.cursor == fnb { b.line_start(line) } else { fnb }, false)
             }
             KeyCode::End => (b.line_end(line), false),
-            KeyCode::PageUp => (b.pos_of(line.saturating_sub(page), b.goal_col), true),
-            KeyCode::PageDown => (b.pos_of(line + page, b.goal_col), true),
+            KeyCode::PageUp => (b.pos_at_display_col(line.saturating_sub(page), b.goal_col), true),
+            KeyCode::PageDown => (b.pos_at_display_col(line + page, b.goal_col), true),
             _ => return false,
         };
         self.move_to(pos, extend, vertical);
@@ -1327,7 +1329,7 @@ impl App {
         } else {
             self.clamp_normal();
         }
-        self.buffer.goal_col = self.buffer.cursor_line_col().1;
+        self.buffer.set_goal();
     }
 
     fn put_register(&mut self, before: bool) {
@@ -1431,7 +1433,7 @@ impl App {
                     let half = (self.layout(self.area).text.height / 2).max(1) as usize;
                     let (l, _) = self.buffer.cursor_line_col();
                     let nl = if c == 'd' { l + half } else { l.saturating_sub(half) };
-                    let p = self.buffer.pos_of(nl, self.buffer.goal_col);
+                    let p = self.buffer.pos_at_display_col(nl, self.buffer.goal_col);
                     return self.move_to(p, false, true);
                 }
                 _ => {}
@@ -2591,7 +2593,7 @@ impl App {
                     1 => {
                         self.buffer.anchor = None;
                         self.buffer.cursor = pos;
-                        self.buffer.goal_col = self.buffer.cursor_line_col().1;
+                        self.buffer.set_goal();
                         self.drag_origin = Some(pos);
                         self.clamp_normal();
                     }

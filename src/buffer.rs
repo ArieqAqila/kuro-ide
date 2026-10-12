@@ -25,7 +25,10 @@ pub struct Buffer {
     pub cursor: usize,
     pub anchor: Option<usize>,
     /// Remembered column for vertical motion.
+    /// Remembered *display* column (cells, tabs expanded) for vertical motion.
     pub goal_col: usize,
+    /// Cells a tab advances to (kept in step with `editor.tab_width` by the app).
+    pub tab_width: usize,
     undo: Vec<Group>,
     redo: Vec<Group>,
     open: bool,
@@ -41,6 +44,17 @@ pub struct Buffer {
     pub synced: bool,
     outbox: Vec<Op>,
     sync_modified: bool,
+}
+
+/// Cells a character takes when it starts at display column `x`.
+pub fn cell_width(c: char, x: usize, tab: usize) -> usize {
+    if c == '\t' {
+        tab.max(1) - x % tab.max(1)
+    } else if c.is_control() {
+        1
+    } else {
+        unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
+    }
 }
 
 pub fn is_word_char(c: char) -> bool {
@@ -78,6 +92,7 @@ impl Buffer {
             cursor: 0,
             anchor: None,
             goal_col: 0,
+            tab_width: 8,
             undo: vec![],
             redo: vec![],
             open: false,
@@ -224,6 +239,37 @@ impl Buffer {
         self.line_start(l) + col.min(self.line_len(l))
     }
 
+    /// Display column (cells) of char index `pos` within its line: tabs expand to the next multiple of
+    /// `tab_width`, wide characters count as their width.
+    pub fn display_col(&self, pos: usize) -> usize {
+        let (l, c) = self.line_col(pos);
+        let mut x = 0;
+        for ch in self.line(l).chars().take(c) {
+            x += cell_width(ch, x, self.tab_width);
+        }
+        x
+    }
+
+    /// The char index on `line` whose left edge is nearest display column `dcol` (a column inside a tab or a
+    /// wide character goes to the nearer edge, ties to the left); past the end of the line it is the line end.
+    pub fn pos_at_display_col(&self, line: usize, dcol: usize) -> usize {
+        let l = line.min(self.line_count() - 1);
+        let mut x = 0;
+        for (i, ch) in self.line(l).chars().enumerate() {
+            let w = cell_width(ch, x, self.tab_width);
+            if dcol < x + w {
+                return self.line_start(l) + if dcol - x <= x + w - dcol { i } else { i + 1 };
+            }
+            x += w;
+        }
+        self.line_end(l)
+    }
+
+    /// Remember where the cursor is as the column for vertical motion (call after every horizontal move or edit).
+    pub fn set_goal(&mut self) {
+        self.goal_col = self.display_col(self.cursor);
+    }
+
     pub fn cursor_line_col(&self) -> (usize, usize) {
         self.line_col(self.cursor)
     }
@@ -302,7 +348,7 @@ impl Buffer {
         let c = self.cursor;
         self.insert(c, s);
         self.cursor = c + s.chars().count();
-        self.goal_col = self.cursor_line_col().1;
+        self.set_goal();
     }
 
     pub fn delete_back(&mut self) {
@@ -445,12 +491,12 @@ impl Buffer {
 
     pub fn up(&self, pos: usize, goal: usize) -> usize {
         let l = self.line_of(pos);
-        if l == 0 { 0 } else { self.pos_of(l - 1, goal) }
+        if l == 0 { 0 } else { self.pos_at_display_col(l - 1, goal) }
     }
 
     pub fn down(&self, pos: usize, goal: usize) -> usize {
         let l = self.line_of(pos);
-        if l + 1 >= self.line_count() { self.line_end(l) } else { self.pos_of(l + 1, goal) }
+        if l + 1 >= self.line_count() { self.line_end(l) } else { self.pos_at_display_col(l + 1, goal) }
     }
 
     pub fn word_forward(&self, pos: usize) -> usize {
