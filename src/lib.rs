@@ -14,6 +14,7 @@ pub mod keymap;
 pub mod keyspec;
 pub mod langs;
 pub mod markup;
+pub mod palette;
 pub mod picker;
 pub mod render;
 pub mod scrollbar;

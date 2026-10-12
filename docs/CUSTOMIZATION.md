@@ -214,6 +214,28 @@ VS Code tabs of one file). See [SYNC.md](SYNC.md).
 - Files bigger than this open without live sync (the status bar says `local`), because every terminal keeps a full copy and an edit history of the text.
 - **Example:** `max_file_mib = 20`
 
+### `ui.adaptive_colors`
+- **Type:** boolean
+- **Default:** `true`
+- Colours that an *extension* defines for its own roles (ksystem's local variables, calcs, file fields and indexes) start as the slots the extension declares. With this on, kuro asks the terminal for its real colours once at start-up (a short, bounded query, only when an extension is installed) and, for every role you have not mapped yourself, keeps the declared slot if it is readable on your theme and otherwise picks the palette slot that stands out best, or a text style (bold, underline, italic) if no slot does. It only ever chooses among the terminal's 16 palette slots and styles: kuro never invents a colour. Turn it off to always use the declared slots.
+- **Example:** `adaptive_colors = false`
+
+## `[ext.<name>]`
+
+Per-extension settings, one table per installed extension (see [EXTENSIONS.md](EXTENSIONS.md)); not part of the option table above because the keys depend on the extension.
+
+```toml
+[ext.ksystem]
+headers = ["/home/ksystem/*.h"]    # files the extension reads names from (here: the table headers)
+
+[ext.ksystem.colors]               # role = palette slot 0-15, or -1 for the terminal's default text colour
+local = 6
+index = -1
+```
+
+* `[ext.<name>.colors]` remaps the roles the extension declares. A role you map here is never changed by `ui.adaptive_colors`. A slot outside -1..15 is a warning.
+* Any other key is a list of paths the extension asked for. Only the file name part may contain `*`, `?` or `[a-z]`.
+
 ## `[colors]`
 
 kuro never emits RGB, 256-colour or background colours. Every text colour is a **role** mapped to one of the

@@ -21,6 +21,7 @@ const HELP: &str = "kuro - a vi-style terminal editor with VS Code-like usabilit
 
 USAGE:
     kuro [--config FILE] [FILE]
+    kuro ext install DIR | remove NAME | list     manage extensions (see docs/EXTENSIONS.md)
 
 OPTIONS:
     --config FILE   read this config.toml instead of $KURO_CONFIG_DIR / ~/.config/kuro/config.toml
@@ -92,6 +93,38 @@ fn spawn_reader() -> Receiver<Vec<u8>> {
     rx
 }
 
+/// Ask the terminal for its colours (`OSC 4` for slots 1-15, `OSC 10` text, `OSC 11` background), ended by a device-attributes query that
+/// every terminal answers, so a terminal that ignores the colour queries costs one quick round trip. Bounded wait.
+fn query_palette(rx: &Receiver<Vec<u8>>, parser: &mut InputParser) -> (kuro::palette::Palette, Vec<InputEvent>) {
+    let mut q = String::from("\x1b]10;?\x07\x1b]11;?\x07");
+    for n in 0..16 {
+        q.push_str(&format!("\x1b]4;{n};?\x07"));
+    }
+    q.push_str("\x1b[c");
+    let mut out = stdout();
+    let _ = out.write_all(q.as_bytes());
+    let _ = out.flush();
+    let deadline = Instant::now() + Duration::from_millis(400);
+    let (mut pal, mut typed) = (kuro::palette::Palette::default(), vec![]);
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left.min(Duration::from_millis(50))) {
+            Ok(bytes) => {
+                for e in parser.feed(&bytes) {
+                    match e {
+                        InputEvent::ColorReply(p) => pal.feed_osc(&p),
+                        InputEvent::DeviceAttributes => return (pal, typed),
+                        InputEvent::KittyKeyboard => {}
+                        other => typed.push(other),
+                    }
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    (pal, typed)
+}
+
 /// Ask the terminal whether it speaks the kitty keyboard protocol: send `CSI ? u` (kitty query) followed by
 /// `CSI c` (primary device attributes, which every terminal answers). If the DA reply arrives without a kitty
 /// reply before it, the protocol is not supported. Gives up after a short, bounded wait.
@@ -108,6 +141,7 @@ fn detect_kitty(rx: &Receiver<Vec<u8>>, parser: &mut InputParser) -> (bool, Vec<
                 for e in parser.feed(&bytes) {
                     match e {
                         InputEvent::KittyKeyboard => kitty = true,
+                        InputEvent::ColorReply(_) => {}
                         InputEvent::DeviceAttributes => return (kitty, typed),
                         other => typed.push(other),
                     }
@@ -121,12 +155,24 @@ fn detect_kitty(rx: &Receiver<Vec<u8>>, parser: &mut InputParser) -> (bool, Vec<
 }
 
 fn main() -> Result<()> {
+    // `kuro ext ...` is a plain command: no terminal, no editor
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("ext") {
+        let out = kuro::ext::cli::run(&argv[1..], &kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"));
+        print!("{}", out.stdout);
+        eprint!("{}", out.stderr);
+        std::process::exit(out.code);
+    }
     let Some(args) = parse_args()? else { return Ok(()) };
     let cfg_path = args.config.clone().unwrap_or_else(default_config_path);
     let (cfg, warnings) = Config::load(&cfg_path);
 
     let mut app = App::new(cfg.clone(), Buffer::new(), kuro::clipboard::detect(&cfg.clipboard.backend));
     app.warnings = warnings;
+    // installed extensions (a failed one is a warning, never a failure to start)
+    let (loaded, ext_warnings) = kuro::ext::store::load_all(&kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"));
+    app.warnings.extend(ext_warnings);
+    app.set_ext_langs(loaded.iter().flat_map(|e| kuro::ext::lang::build(&e.manifest)).collect());
 
     let mut term = setup()?;
     let rx = spawn_reader();
@@ -143,6 +189,13 @@ fn main() -> Result<()> {
         let _ = execute!(stdout(), PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES));
     }
     app.set_kitty(kitty);
+    // extension colours that suit the terminal: only asked when an extension is installed
+    let mut early = early;
+    if cfg.ui.adaptive_colors && !app.ext_langs.is_empty() {
+        let (palette, typed) = query_palette(&rx, &mut parser);
+        early.extend(typed);
+        app.set_palette(palette);
+    }
     if cfg.sync.enabled {
         app.set_sync_options(kuro::sync::net::SyncOptions::from_env(cfg.sync.max_file_mib.saturating_mul(1024 * 1024)));
     }
@@ -167,7 +220,7 @@ fn dispatch(app: &mut App, events: Vec<InputEvent>) {
             InputEvent::Key(k) => app.handle_key(k),
             InputEvent::Mouse(m) => app.handle_mouse(m),
             InputEvent::Paste(s) => app.handle_paste(&s),
-            InputEvent::KittyKeyboard | InputEvent::DeviceAttributes => {}
+            InputEvent::KittyKeyboard | InputEvent::DeviceAttributes | InputEvent::ColorReply(_) => {}
         }
     }
 }

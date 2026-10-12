@@ -31,6 +31,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **Extension system** (`kuro ext install DIR | remove NAME | list`): optional, data-only language definitions in a TOML manifest, checked
+  against this kuro's version, installed with a seal so only extensions installed by kuro load, recorded in a registry that is replaced
+  atomically. Extensions colour text only with roles that map to the terminal's palette (no RGB, no 256-colour, no background). See
+  `docs/EXTENSIONS.md`.
+- **ksystem language extension** (`extensions/ksystem`): sections, actions, field attributes, `/* */` comments, multi-line strings, and four
+  distinct colours for local variables, calcs, file fields and indexes (the last two are read from the user's own table headers, listed in
+  `[ext.ksystem] headers`). `:setlang ksystem`, detected by file name (`sct<N>`, `tmp_*`), `.var`, or how a file starts.
+- `ui.adaptive_colors`: extension colours that suit the terminal's own palette, chosen from its 16 slots (never invented).
 - **More languages for `:setlang` and detection by extension**: Rust, C, C++, Java, JavaScript, TypeScript, HTML, CSS, PHP,
   Ruby, YAML, TOML and XML (and Lua), each with keyword, builtin, string, comment, number and operator rules and bracket
   depth colouring. HTML and PHP colour their embedded regions (`<style>` as CSS, `<script>` as JavaScript or JSON, `<?php … ?>`

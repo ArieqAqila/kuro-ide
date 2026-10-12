@@ -181,6 +181,8 @@ pub struct App {
     pub ext_styles: Vec<ratatui::style::Style>,
     /// Languages whose `names_from` files have been read (done the first time the language is shown).
     ext_names_loaded: std::collections::HashSet<String>,
+    /// What the terminal told us about its colours (for `ui.adaptive_colors`); `None` when it did not answer.
+    palette: Option<crate::palette::Palette>,
     pub picker: Option<Picker>,
     /// Does the terminal speak the kitty keyboard protocol? `None` until detected (tests, startup).
     pub kitty: Option<bool>,
@@ -317,6 +319,7 @@ impl App {
             ext_langs: vec![],
             ext_styles: vec![],
             ext_names_loaded: Default::default(),
+            palette: None,
             picker: None,
             kitty: None,
             kitty_notice_shown: false,
@@ -358,6 +361,13 @@ impl App {
         self.syn = None;
     }
 
+    /// What the terminal said about its colours; extension roles nobody mapped are re-chosen to suit them.
+    pub fn set_palette(&mut self, p: crate::palette::Palette) {
+        self.palette = Some(p);
+        self.refresh_ext_styles();
+        self.syn = None;
+    }
+
     /// Install the languages of loaded extensions (and re-detect the current file's language).
     pub fn set_ext_langs(&mut self, langs: Vec<&'static LangSpec>) {
         self.ext_langs = langs;
@@ -371,13 +381,22 @@ impl App {
         self.ext_styles = match self.lang.ext {
             Some(e) => {
                 let user = self.cfg.ext.get(&e.ext_name).map(|c| &c.colors);
-                e.roles
+                let specs: Vec<crate::palette::RoleSpec> = e
+                    .roles
                     .iter()
-                    .map(|r| {
-                        let slot = user.and_then(|u| u.get(&r.name)).copied().unwrap_or(r.default_slot);
-                        crate::render::slot_style(slot)
+                    .map(|r| match user.and_then(|u| u.get(&r.name)) {
+                        Some(slot) => crate::palette::RoleSpec { default_slot: *slot, pinned: true },
+                        None => crate::palette::RoleSpec { default_slot: r.default_slot, pinned: false },
                     })
-                    .collect()
+                    .collect();
+                let choices = match (&self.palette, self.cfg.ui.adaptive_colors) {
+                    (Some(p), true) => crate::palette::pick(p, &specs),
+                    _ => specs
+                        .iter()
+                        .map(|s| crate::palette::Choice { slot: s.default_slot, emphasis: crate::palette::Emphasis::None })
+                        .collect(),
+                };
+                choices.iter().map(|c| crate::render::choice_style(*c)).collect()
             }
             None => vec![],
         };

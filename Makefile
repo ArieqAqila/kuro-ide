@@ -17,7 +17,7 @@ test: test-unit test-prop test-snapshots test-ui test-sync test-integration
 
 # pure logic, input parser, config, docs checks (config options and keybindings, both directions), recorded error fixtures
 test-unit:
-	$(CARGO) test --lib --test classify_fixtures --test docs_check --test keybindings --test cli --test syntax_langs
+	$(CARGO) test --lib --test classify_fixtures --test docs_check --test keybindings --test cli --test syntax_langs --test ext_store
 
 # property / fuzz tests, short run (256 cases each). Nightly CI runs test-prop-long.
 test-prop:
@@ -36,7 +36,7 @@ update-snapshots:
 
 # rendering and input on the cell buffer, plus the real binary in a pseudo-terminal (no database needed)
 test-ui:
-	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest --test ui_password --test ui_cursor --test ui_select_keys --test ui_mouse_select --test ui_ctrl_rightclick --test ui_hscroll --test ui_scrollbars \
+	$(CARGO) test --test ui_render --test ui_sql --test ui_sql_run --test ui_indent --test ui_modes --test ui_suggest --test ui_password --test ui_cursor --test ui_select_keys --test ui_mouse_select --test ui_ctrl_rightclick --test ui_hscroll --test ui_scrollbars --test ext_ksystem --test pty_ext \
 	  --test color_rule --test pty_ui
 
 # live sync: simulator, real sockets and locks, several editors, several real processes (SIGKILL of the leader)

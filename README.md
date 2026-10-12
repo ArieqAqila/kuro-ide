@@ -53,6 +53,12 @@ Open the same file in several kuro terminals and they stay in step like VS Code 
 undo/redo and save are shared, and nothing is lost if a kuro process dies. Nothing to start. Details and limits:
 [docs/SYNC.md](docs/SYNC.md).
 
+### Extensions
+
+Optional, data-only language packs: `kuro ext install DIR`, `kuro ext list`, `kuro ext remove NAME`. The repository ships one, **ksystem**
+(`extensions/ksystem`): `kuro ext install extensions/ksystem`, then `:setlang ksystem`. Colours follow your terminal's palette and you can
+remap them. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
+
 ### SQL
 
 1. Add a connection profile (kept outside the repo):

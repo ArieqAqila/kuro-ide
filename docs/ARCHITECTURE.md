@@ -31,6 +31,15 @@ Data flow: terminal event → `App::handle_key/handle_mouse` → state change �
 ratatui diffs it onto the terminal. Query results come back from the worker through a channel and are picked up
 by `App::tick()`.
 
+## Extensions and colours
+
+`src/ext/` is the extension system: `manifest` (parsing and validation), `store` (sealed install / list / remove / load, atomic registry),
+`seal` (HMAC-SHA256 with a per-user key), `lang` (manifest to `LangSpec` plus the extension's rules and roles), `names` (the built-in
+readers for `names_from`), `cli` (`kuro ext …`), `version` (the `kuro = ">=0.1, <0.2"` check). An extension language is an ordinary
+`LangSpec` with an optional `ExtData`; the tokenizer runs the generic pass first and then `apply_ext` (regex rules, declared names, names
+from the user's files), and `Kind::Ext(i)` is the language's own role `i`. `src/palette.rs` chooses extension colours from the terminal's own
+palette (pure functions; the query is in `main.rs`). See [EXTENSIONS.md](EXTENSIONS.md).
+
 ## Live sync (see [SYNC.md](SYNC.md) for behaviour)
 
 `src/sync/` is built as pure state machines with the I/O at the edge, so the hard parts can be tested without

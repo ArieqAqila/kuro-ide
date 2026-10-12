@@ -35,6 +35,19 @@ pub fn ansi_color(slot: i8) -> Option<Color> {
     })
 }
 
+/// The style of a role placed by [`crate::palette::pick`]: a palette slot (or the default text) plus an optional emphasis.
+pub fn choice_style(c: crate::palette::Choice) -> Style {
+    use crate::palette::Emphasis;
+    let base = slot_style(c.slot);
+    match c.emphasis {
+        Emphasis::None => base,
+        Emphasis::Bold => base.add_modifier(Modifier::BOLD),
+        Emphasis::Underline => base.add_modifier(Modifier::UNDERLINED),
+        Emphasis::Italic => base.add_modifier(Modifier::ITALIC),
+        Emphasis::BoldUnderline => base.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    }
+}
+
 pub fn slot_style(slot: i8) -> Style {
     match ansi_color(slot) {
         Some(c) => Style::default().fg(c),

@@ -18,6 +18,46 @@ pub enum Term {
     Silent,
 }
 
+/// The colours an emulated terminal reports when asked with `OSC 4` / `OSC 10` / `OSC 11`.
+#[derive(Clone, Copy)]
+pub struct Theme {
+    pub slots: [(u8, u8, u8); 16],
+    pub fg: (u8, u8, u8),
+    pub bg: (u8, u8, u8),
+}
+
+impl Theme {
+    const XTERM: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (205, 0, 0),
+        (0, 205, 0),
+        (205, 205, 0),
+        (0, 0, 238),
+        (205, 0, 205),
+        (0, 205, 205),
+        (229, 229, 229),
+        (127, 127, 127),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (92, 92, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+    pub fn dark() -> Theme {
+        Theme { slots: Self::XTERM, fg: (229, 229, 229), bg: (0, 0, 0) }
+    }
+    pub fn light() -> Theme {
+        Theme { slots: Self::XTERM, fg: (30, 30, 30), bg: (255, 255, 255) }
+    }
+}
+
+fn osc_reply(code: &str, c: (u8, u8, u8)) -> Vec<u8> {
+    let w = |v: u8| format!("{:04x}", v as u32 * 257);
+    format!("\x1b]{code};rgb:{}/{}/{}\x1b\\", w(c.0), w(c.1), w(c.2)).into_bytes()
+}
+
 pub struct Pty {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     parser: Arc<Mutex<vt100::Parser>>,
@@ -55,6 +95,11 @@ impl Pty {
     }
 
     pub fn spawn_term(dir: &Path, config: &str, file: Option<&Path>, env: &[(&str, &str)], term: Term) -> Pty {
+        Pty::spawn_themed(dir, config, file, env, term, None)
+    }
+
+    /// Like `spawn_term`, and the emulated terminal answers colour queries with `theme` (it stays silent about colours when `None`).
+    pub fn spawn_themed(dir: &Path, config: &str, file: Option<&Path>, env: &[(&str, &str)], term: Term, theme: Option<Theme>) -> Pty {
         let (rows, cols) = (30, 100);
         std::fs::write(dir.join("config.toml"), config).unwrap();
         let pair = native_pty_system().openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).unwrap();
@@ -70,6 +115,7 @@ impl Pty {
         // nor the real sync sockets or journals
         cmd.env("XDG_RUNTIME_DIR", dir.join("run"));
         cmd.env("XDG_STATE_HOME", dir.join("state"));
+        cmd.env("XDG_DATA_HOME", dir.join("data"));
         cmd.env_remove("WAYLAND_DISPLAY");
         cmd.env_remove("DISPLAY");
         for (k, v) in env {
@@ -97,6 +143,20 @@ impl Pty {
                 let mut answer = Vec::new();
                 if term == Term::Kitty && has(b"\x1b[?u") {
                     answer.extend_from_slice(b"\x1b[?0u");
+                }
+                if let Some(t) = theme {
+                    let text = String::from_utf8_lossy(chunk);
+                    if text.contains("\x1b]10;?") {
+                        answer.extend(osc_reply("10", t.fg));
+                    }
+                    if text.contains("\x1b]11;?") {
+                        answer.extend(osc_reply("11", t.bg));
+                    }
+                    for n in 0..16usize {
+                        if text.contains(&format!("\x1b]4;{n};?")) {
+                            answer.extend(osc_reply(&format!("4;{n}"), t.slots[n]));
+                        }
+                    }
                 }
                 if term != Term::Silent && has(b"\x1b[c") {
                     answer.extend_from_slice(b"\x1b[?62;c");
@@ -200,6 +260,12 @@ impl Pty {
                 }
             }
         }
+    }
+
+    /// The foreground colour of the cell at (row, col) as the emulator sees it.
+    pub fn fg_at(&self, row: u16, col: u16) -> vt100::Color {
+        let p = self.parser.lock().unwrap();
+        p.screen().cell(row, col).map(|c| c.fgcolor()).unwrap_or(vt100::Color::Default)
     }
 
     pub fn has_reverse_video(&self) -> bool {

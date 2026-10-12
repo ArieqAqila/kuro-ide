@@ -37,6 +37,7 @@ block_editing_when_disconnected = true
 [ui]
 syntax_highlight = true
 kitty_keyboard = "auto"     # auto | on | off
+adaptive_colors = true      # pick extension colours that stand out in your terminal theme
 
 [sync]
 enabled = true              # keep terminals that have the same file open in step

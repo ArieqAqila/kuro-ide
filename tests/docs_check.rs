@@ -184,3 +184,58 @@ fn every_documented_alias_resolves_to_its_row() {
         }
     }
 }
+
+const EXTENSIONS: &str = include_str!("../docs/EXTENSIONS.md");
+
+/// The field names serde accepts for a `deny_unknown_fields` struct, taken from the error it gives for an unknown key.
+fn fields_of<T: serde::de::DeserializeOwned>() -> Vec<String> {
+    let err = toml::from_str::<T>("zzz_unknown_key = 1").err().expect("an unknown key is an error").to_string();
+    let after = err.split("expected").nth(1).unwrap_or("");
+    after.split('`').skip(1).step_by(2).map(String::from).collect()
+}
+
+#[test]
+fn every_manifest_field_is_documented() {
+    use kuro::ext::manifest::{Declares, LanguageDef, Manifest, NamesFrom, Rule};
+    for (what, fields) in [
+        ("manifest", fields_of::<Manifest>()),
+        ("[[language]]", fields_of::<LanguageDef>()),
+        ("[[language.rule]]", fields_of::<Rule>()),
+        ("[[language.declares]]", fields_of::<Declares>()),
+        ("[[language.names_from]]", fields_of::<NamesFrom>()),
+    ] {
+        assert!(fields.len() >= 3, "{what}: could not read the field names ({fields:?})");
+        for f in fields {
+            let shown = EXTENSIONS.contains(&format!("{f} ="))
+                || EXTENSIONS.contains(&format!("[[{f}]]"))
+                || EXTENSIONS.contains(&format!(".{f}]"));
+            assert!(shown, "the {what} field `{f}` is not shown in docs/EXTENSIONS.md");
+        }
+    }
+}
+
+#[test]
+fn the_extension_commands_readers_and_roles_are_documented() {
+    for cmd in ["kuro ext install", "kuro ext remove", "kuro ext list", "--force"] {
+        assert!(EXTENSIONS.contains(cmd), "{cmd} is not documented");
+    }
+    for p in kuro::ext::manifest::PARSERS {
+        assert!(EXTENSIONS.contains(p), "reader {p} is not documented");
+    }
+    for r in kuro::ext::manifest::CORE_ROLES {
+        assert!(EXTENSIONS.contains(&format!("`{r}`")), "core role {r} is not documented");
+    }
+}
+
+#[test]
+fn the_ksystem_readme_names_every_role_with_its_default_slot() {
+    let readme = include_str!("../extensions/ksystem/README.md");
+    let m = kuro::ext::manifest::parse(include_str!("../extensions/ksystem/kuro-ext.toml"), env!("CARGO_PKG_VERSION")).unwrap();
+    for (role, slot) in &m.language[0].roles {
+        let row = readme
+            .lines()
+            .find(|l| l.starts_with(&format!("| `{role}` |")))
+            .unwrap_or_else(|| panic!("role {role} is not in the README table"));
+        assert!(row.contains(&format!("| {slot} (")), "the README row of {role} does not say slot {slot}: {row}");
+    }
+}

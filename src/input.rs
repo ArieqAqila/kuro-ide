@@ -21,6 +21,8 @@ pub enum InputEvent {
     KittyKeyboard,
     /// Reply to the primary device attributes query (`CSI c`): the terminal answered *something*.
     DeviceAttributes,
+    /// Reply to an `OSC 4 ; n ; ?`, `OSC 10 ; ?` or `OSC 11 ; ?` colour query: the payload (`4;1;rgb:…`).
+    ColorReply(String),
 }
 
 #[derive(Debug, Default)]
@@ -189,7 +191,8 @@ impl InputParser {
         match self.buf[1] {
             b'[' => self.parse_csi(),
             b'O' => self.parse_ss3(),
-            b']' | b'P' | b'_' | b'^' | b'X' => self.skip_string(), // OSC / DCS / APC...: replies we do not use
+            b']' => self.osc(),
+            b'P' | b'_' | b'^' | b'X' => self.skip_string(), // DCS / APC...: replies we do not use
             0x1b => Parsed::Done(1, vec![key(KeyCode::Esc, KeyModifiers::NONE)]), // ESC ESC: first is a real Esc
             _ => {
                 // ESC + X = Alt+X: parse X on its own and add the modifier
@@ -207,6 +210,25 @@ impl InputParser {
                 }
             }
         }
+    }
+
+    /// An operating-system command, ended by BEL or ST. Colour replies become events; everything else is dropped.
+    fn osc(&mut self) -> Parsed {
+        for i in 2..self.buf.len() {
+            let end = if self.buf[i] == 0x07 {
+                Some(i + 1)
+            } else if self.buf[i] == 0x1b && self.buf.get(i + 1) == Some(&b'\\') {
+                Some(i + 2)
+            } else {
+                None
+            };
+            if let Some(len) = end {
+                let payload = String::from_utf8_lossy(&self.buf[2..i]).into_owned();
+                let wanted = payload.starts_with("4;") || payload.starts_with("10;") || payload.starts_with("11;");
+                return Parsed::Done(len, if wanted && payload.len() < 200 { vec![InputEvent::ColorReply(payload)] } else { vec![] });
+            }
+        }
+        Parsed::Incomplete
     }
 
     fn skip_string(&mut self) -> Parsed {
@@ -694,6 +716,26 @@ mod tests {
     /// X10 / normal reporting: `CSI M` and three bytes, each 32 + value (column and row are 1-based).
     fn x10(button: u8, x: u8, y: u8) -> Vec<u8> {
         vec![0x1b, b'[', b'M', 32 + button, 32 + x, 32 + y]
+    }
+
+    #[test]
+    fn colour_replies_become_events_and_other_osc_strings_are_dropped() {
+        let mut p = InputParser::new();
+        assert_eq!(p.feed(b"\x1b]4;1;rgb:cdcd/0000/0000\x07"), vec![InputEvent::ColorReply("4;1;rgb:cdcd/0000/0000".into())]);
+        assert_eq!(p.feed(b"\x1b]11;rgb:0000/0000/0000\x1b\\"), vec![InputEvent::ColorReply("11;rgb:0000/0000/0000".into())]);
+        assert_eq!(p.feed(b"\x1b]10;rgb:ffff/ffff/ffff\x07"), vec![InputEvent::ColorReply("10;rgb:ffff/ffff/ffff".into())]);
+        assert!(p.feed(b"\x1b]0;a window title\x07").is_empty());
+        assert!(p.feed(b"\x1b]52;c;aGk=\x07").is_empty());
+        // split anywhere
+        let bytes = b"\x1b]4;7;rgb:e5e5/e5e5/e5e5\x1b\\";
+        for cut in 1..bytes.len() {
+            let mut p = InputParser::new();
+            assert!(p.feed(&bytes[..cut]).is_empty(), "cut {cut}");
+            assert_eq!(p.feed(&bytes[cut..]).len(), 1, "cut {cut}");
+        }
+        // an absurdly long payload is not turned into an event
+        let long = format!("\x1b]4;1;{}\x07", "a".repeat(500));
+        assert!(InputParser::new().feed(long.as_bytes()).is_empty());
     }
 
     #[test]

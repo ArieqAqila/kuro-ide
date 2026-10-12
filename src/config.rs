@@ -118,11 +118,13 @@ pub struct UiConfig {
     pub syntax_highlight: bool,
     /// auto | on | off: use the kitty keyboard protocol so Ctrl+Enter, Shift+Tab etc. are distinguishable.
     pub kitty_keyboard: String,
+    /// Choose extension colours that suit the terminal's own palette (see docs/EXTENSIONS.md).
+    pub adaptive_colors: bool,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { syntax_highlight: true, kitty_keyboard: "auto".into() }
+        Self { syntax_highlight: true, kitty_keyboard: "auto".into(), adaptive_colors: true }
     }
 }
 
