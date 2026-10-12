@@ -81,7 +81,9 @@ pub fn key_or_create(path: &Path) -> io::Result<Vec<u8>> {
     }
     let mut key = vec![0u8; KEY_LEN];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut key)?;
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // unique per call, not just per process: two threads may create the key at once
+    let tmp = path.with_extension(format!("tmp{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     {
         let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
         f.write_all(&key)?;

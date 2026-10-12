@@ -56,3 +56,7 @@ comment = -1              # -1: dim italic default foreground
 key = 4
 bracket_error = 1         # also shown in reverse video
 bracket_depth = [3, 5, 6, 2, 4]   # cycled by nesting depth
+diff_add = 2              # kuro git: added lines
+diff_del = 1              # kuro git: removed lines
+diff_hunk = 6             # kuro git: @@ hunk headers
+diff_meta = -1            # kuro git: file headers (-1: bold default text colour)

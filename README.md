@@ -53,6 +53,11 @@ Open the same file in several kuro terminals and they stay in step like VS Code 
 undo/redo and save are shared, and nothing is lost if a kuro process dies. Nothing to start. Details and limits:
 [docs/SYNC.md](docs/SYNC.md).
 
+### Git history
+
+`kuro git` browses the history of the repository you are in (tree, file history with renames, commits, diffs; `o` opens a file as it was at a
+commit, read-only). `kuro git -fl FILE` opens one file's history. See [docs/GIT.md](docs/GIT.md).
+
 ### Extensions
 
 Optional, data-only language packs: `kuro ext install DIR`, `kuro ext list`, `kuro ext remove NAME`. The repository ships one, **ksystem**

@@ -494,7 +494,7 @@ pub fn rows_text(buf: &Cells) -> Vec<String> {
 }
 
 /// Draw one scrollbar into `r` (a strip one cell thick).
-fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, vertical: bool) {
+pub(crate) fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, vertical: bool) {
     let thumb = bar.thumb_cells();
     for i in 0..bar.len {
         let (x, y) = if vertical { (r.x, r.y + i as u16) } else { (r.x + i as u16, r.y) };

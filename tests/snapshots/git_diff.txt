@@ -1,0 +1,93 @@
+== text 100x30 ==
+| kuro git · e3a9614 docs/guide.txt  Rename lib to core, drop the guide                              |
+|diff --git a/docs/guide.txt b/docs/guide.txt                                                        |
+|deleted file mode 100644                                                                            |
+|index 6c8d0a9..0000000                                                                              |
+|--- a/docs/guide.txt                                                                                |
+|+++ /dev/null                                                                                       |
+|@@ -1,10 +0,0 @@                                                                                    |
+|-line 0 of the guide file                                                                           |
+|-line 1 of the guide file                                                                           |
+|-line 2 of the guide file                                                                           |
+|-line 3 of the guide file                                                                           |
+|-line 4 of the guide file                                                                           |
+|-line 5 of the guide file                                                                           |
+|-line 6 of the guide file                                                                           |
+|-line 7 of the guide file                                                                           |
+|-line 8 of the guide file                                                                           |
+|-line 9 of the guide file                                                                           |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| ↑↓←→ scroll  n/p commit  o open file  Esc back  q quit                                             |
+== style ==
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+== fg ==
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|
+|....................................................................................................|

@@ -176,6 +176,8 @@ pub struct App {
     /// Set by `:setlang`; overrides detection by extension until `:setlang auto`.
     pub lang_override: Option<&'static LangSpec>,
     /// Language modes of installed extensions (see `src/ext`).
+    /// A read-only view (a file shown by `kuro git`): every edit and every write is refused with this message.
+    pub view_only: Option<String>,
     pub ext_langs: Vec<&'static LangSpec>,
     /// Styles of the current language's own colour roles, resolved from the extension's defaults and `[ext.<name>.colors]`.
     pub ext_styles: Vec<ratatui::style::Style>,
@@ -316,6 +318,7 @@ impl App {
             syn: None,
             lang,
             lang_override: None,
+            view_only: None,
             ext_langs: vec![],
             ext_styles: vec![],
             ext_names_loaded: Default::default(),
@@ -405,7 +408,8 @@ impl App {
     /// True while edits are refused: a SQL buffer with no database connection
     /// (see `sql.block_editing_when_disconnected`).
     pub fn edit_blocked(&self) -> bool {
-        self.cfg.sql.block_editing_when_disconnected && self.lang.name == syntax::SQL.name && self.sql.session.is_none()
+        self.view_only.is_some()
+            || self.cfg.sql.block_editing_when_disconnected && self.lang.name == syntax::SQL.name && self.sql.session.is_none()
     }
 
     /// Tell the user once, in a SQL buffer, that this terminal cannot send Ctrl+Enter.
@@ -435,7 +439,7 @@ impl App {
         self.buffer.blocked_attempt = false;
         if attempted {
             (self.buffer.cursor, self.buffer.anchor, self.buffer.goal_col, self.mode) = saved;
-            self.flash(DISCONNECTED_MSG);
+            self.flash(self.view_only.clone().unwrap_or_else(|| DISCONNECTED_MSG.to_string()));
         }
     }
 
@@ -618,7 +622,7 @@ impl App {
             return;
         }
         if m == Mode::Insert && self.edit_blocked() {
-            return self.flash(DISCONNECTED_MSG);
+            return self.flash(self.view_only.clone().unwrap_or_else(|| DISCONNECTED_MSG.to_string()));
         }
         self.buffer.break_group();
         self.mode = m;
@@ -984,6 +988,9 @@ impl App {
     }
 
     fn save_with(&mut self, force: bool) {
+        if let Some(m) = self.view_only.clone() {
+            return self.flash(m);
+        }
         if self.sync.is_some() {
             self.sync_pump();
             if let Some(h) = self.sync.as_mut() {
@@ -1964,6 +1971,15 @@ impl App {
     pub fn exec_command(&mut self, line: &str) {
         let line = line.trim().trim_start_matches(':').trim();
         let (cmd, arg) = line.split_once(char::is_whitespace).map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
+        if let Some(m) = &self.view_only
+            && matches!(
+                cmd,
+                "w" | "write" | "w!" | "write!" | "wq" | "x" | "e" | "edit" | "sql" | "connect" | "run" | "runline" | "runbuffer"
+            )
+        {
+            let m = m.clone();
+            return self.flash(m);
+        }
         match cmd {
             "" => {}
             "w!" | "write!" if arg.is_empty() => self.save_with(true),

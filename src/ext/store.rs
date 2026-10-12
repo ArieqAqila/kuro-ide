@@ -116,7 +116,8 @@ fn read_registry(root: &Path) -> Result<Registry, String> {
 
 /// Replace a file atomically: write a temporary file next to it, flush it to disk, rename it over the target.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = path.with_extension(format!("tmp{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     {
         let mut f = File::create(&tmp)?;
         f.write_all(bytes)?;
@@ -182,11 +183,12 @@ fn read_source(dir: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
 }
 
 fn rand_suffix() -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut b = [0u8; 4];
     if let Ok(mut f) = File::open("/dev/urandom") {
         let _ = io::Read::read_exact(&mut f, &mut b);
     }
-    format!("{}-{}", std::process::id(), seal::hex(&b))
+    format!("{}-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed), seal::hex(&b))
 }
 
 fn read_installed_files(dir: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {

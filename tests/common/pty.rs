@@ -100,14 +100,37 @@ impl Pty {
 
     /// Like `spawn_term`, and the emulated terminal answers colour queries with `theme` (it stays silent about colours when `None`).
     pub fn spawn_themed(dir: &Path, config: &str, file: Option<&Path>, env: &[(&str, &str)], term: Term, theme: Option<Theme>) -> Pty {
+        let mut args = vec!["--config".to_string(), dir.join("config.toml").display().to_string()];
+        if let Some(f) = file {
+            args.push(f.display().to_string());
+        }
+        Pty::spawn_general(dir, config, &args, None, env, term, theme)
+    }
+
+    /// `kuro <args>` in `cwd`, with `config` as the config file found through KURO_CONFIG_DIR (for sub-commands such as `kuro git`).
+    pub fn spawn_args(dir: &Path, config: &str, args: &[&str], cwd: &Path, env: &[(&str, &str)]) -> Pty {
+        let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        Pty::spawn_general(dir, config, &args, Some(cwd), env, Term::Kitty, None)
+    }
+
+    fn spawn_general(
+        dir: &Path,
+        config: &str,
+        args: &[String],
+        cwd: Option<&Path>,
+        env: &[(&str, &str)],
+        term: Term,
+        theme: Option<Theme>,
+    ) -> Pty {
         let (rows, cols) = (30, 100);
         std::fs::write(dir.join("config.toml"), config).unwrap();
         let pair = native_pty_system().openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).unwrap();
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_kuro"));
-        cmd.arg("--config");
-        cmd.arg(dir.join("config.toml"));
-        if let Some(f) = file {
-            cmd.arg(f);
+        for a in args {
+            cmd.arg(a);
+        }
+        if let Some(c) = cwd {
+            cmd.cwd(c);
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("KURO_CONFIG_DIR", dir);

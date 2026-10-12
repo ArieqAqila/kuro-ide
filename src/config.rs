@@ -161,6 +161,11 @@ pub struct ColorsConfig {
     pub bracket_error: i8,
     /// Colours cycled through by bracket nesting depth.
     pub bracket_depth: Vec<i8>,
+    /// `kuro git` diffs: added lines, removed lines, `@@` hunk headers; file headers use the default text colour in bold (-1) or this slot.
+    pub diff_add: i8,
+    pub diff_del: i8,
+    pub diff_hunk: i8,
+    pub diff_meta: i8,
 }
 
 impl Default for ColorsConfig {
@@ -176,6 +181,10 @@ impl Default for ColorsConfig {
             key: 4,
             bracket_error: 1,
             bracket_depth: vec![3, 5, 6, 2, 4],
+            diff_add: 2,
+            diff_del: 1,
+            diff_hunk: 6,
+            diff_meta: -1,
         }
     }
 }

@@ -31,6 +31,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **`kuro git`**: a read-only history browser for the git repository you are in: the file tree, a file's history (renames followed), the
+  history of the repository, a commit with its changed files, and the diff of a commit or of one file, with scrollbars and mouse. `o` opens a
+  file as it was at a commit in the editor, read-only. `kuro git -fl FILE` opens one file's history directly. Outside a repository it prints
+  `direktori tidak ada git` and exits with status 128. Uses the `git` command (read-only, never runs a repository's configured diff programs).
+  New colour roles `colors.diff_add`, `diff_del`, `diff_hunk`, `diff_meta`. See `docs/GIT.md`.
 - **Extension system** (`kuro ext install DIR | remove NAME | list`): optional, data-only language definitions in a TOML manifest, checked
   against this kuro's version, installed with a seal so only extensions installed by kuro load, recorded in a registry that is replaced
   atomically. Extensions colour text only with roles that map to the terminal's palette (no RGB, no 256-colour, no background). See

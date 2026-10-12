@@ -129,3 +129,4 @@ pub fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
         std::thread::yield_now();
     }
 }
+pub mod gitrepo;

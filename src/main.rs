@@ -22,6 +22,7 @@ const HELP: &str = "kuro - a vi-style terminal editor with VS Code-like usabilit
 USAGE:
     kuro [--config FILE] [FILE]
     kuro ext install DIR | remove NAME | list     manage extensions (see docs/EXTENSIONS.md)
+    kuro git [-fl FILE]                            browse the history of the git repository you are in (docs/GIT.md)
 
 OPTIONS:
     --config FILE   read this config.toml instead of $KURO_CONFIG_DIR / ~/.config/kuro/config.toml
@@ -154,6 +155,89 @@ fn detect_kitty(rx: &Receiver<Vec<u8>>, parser: &mut InputParser) -> (bool, Vec<
     (kitty, typed)
 }
 
+const GIT_HELP: &str = "kuro git - browse the history of the git repository you are in
+
+USAGE:
+    kuro git                 the file tree, with each file's history, and the history of the repository
+    kuro git -fl FILE        open the commit history of one file directly (renames are followed)
+    kuro git --help
+
+Inside: Enter opens, Esc goes back, q quits, o opens a file as it was at a commit (read-only). See docs/GIT.md.";
+
+/// `kuro git [-fl FILE]`
+fn git_main(args: &[String]) -> Result<()> {
+    use kuro::gitview::GitApp;
+    use kuro::gitview::cmd::{Git, GitError};
+    let mut file: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-h" | "--help" => {
+                println!("{GIT_HELP}");
+                return Ok(());
+            }
+            "-fl" | "--file-log" => match it.next() {
+                Some(f) => file = Some(f.clone()),
+                None => {
+                    eprintln!("-fl needs a file name\n{GIT_HELP}");
+                    std::process::exit(2);
+                }
+            },
+            other => {
+                eprintln!("unknown argument {other}\n{GIT_HELP}");
+                std::process::exit(2);
+            }
+        }
+    }
+    let cwd = std::env::current_dir().context("cannot read the current directory")?;
+    let git = match Git::open(&cwd, vec![]) {
+        Ok(g) => g,
+        Err(GitError::NotRepo) => {
+            eprintln!("direktori tidak ada git");
+            std::process::exit(128);
+        }
+        Err(GitError::NoGit) => {
+            eprintln!("git is not installed");
+            std::process::exit(127);
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
+    let rel = match &file {
+        Some(f) => match git.repo_path(&cwd, f) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
+    let (cfg, _warnings) = Config::load(&default_config_path());
+    let mut app = match GitApp::new(git, cfg.clone(), rel) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
+    let (loaded, _) = kuro::ext::store::load_all(&kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"));
+    app.ext_langs = loaded.iter().flat_map(|e| kuro::ext::lang::build(&e.manifest)).collect();
+    let mut term = setup()?;
+    let rx = spawn_reader();
+    let mut parser = InputParser::new();
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore(false);
+        hook(info);
+    }));
+    let result = run(&mut term, &mut app, &rx, &mut parser, vec![]);
+    restore(false);
+    result
+}
+
 fn main() -> Result<()> {
     // `kuro ext ...` is a plain command: no terminal, no editor
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -162,6 +246,9 @@ fn main() -> Result<()> {
         print!("{}", out.stdout);
         eprint!("{}", out.stderr);
         std::process::exit(out.code);
+    }
+    if argv.first().map(String::as_str) == Some("git") {
+        return git_main(&argv[1..]);
     }
     let Some(args) = parse_args()? else { return Ok(()) };
     let cfg_path = args.config.clone().unwrap_or_else(default_config_path);
@@ -214,28 +301,19 @@ fn main() -> Result<()> {
     result
 }
 
-fn dispatch(app: &mut App, events: Vec<InputEvent>) {
-    for e in events {
-        match e {
-            InputEvent::Key(k) => app.handle_key(k),
-            InputEvent::Mouse(m) => app.handle_mouse(m),
-            InputEvent::Paste(s) => app.handle_paste(&s),
-            InputEvent::KittyKeyboard | InputEvent::DeviceAttributes | InputEvent::ColorReply(_) => {}
-        }
-    }
-}
+use kuro::screen::{Screen, dispatch};
 
-fn run(term: &mut Term, app: &mut App, rx: &Receiver<Vec<u8>>, parser: &mut InputParser, early: Vec<InputEvent>) -> Result<()> {
+fn run<S: Screen>(term: &mut Term, app: &mut S, rx: &Receiver<Vec<u8>>, parser: &mut InputParser, early: Vec<InputEvent>) -> Result<()> {
     let mut dirty = true;
     let mut size = term.size()?;
     dispatch(app, early);
-    while !app.quit {
+    while !app.quit() {
         let now = term.size()?;
         if now != size {
             size = now;
             dirty = true;
         }
-        if dirty || app.is_busy() {
+        if dirty || app.busy() {
             term.draw(|f| {
                 let area = f.area();
                 let cursor = app.render(f.buffer_mut(), area);

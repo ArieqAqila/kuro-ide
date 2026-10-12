@@ -316,6 +316,30 @@ rendered screen contains a truecolor, 256-colour or background-colour escape seq
 - Bracket pairs `() [] {}` are coloured by nesting depth, cycling through this list. Brackets inside strings and comments are ignored.
 - **Example:** `bracket_depth = [9, 11, 10, 14, 12, 13]`
 
+### `colors.diff_add`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `2`
+- `kuro git`: added lines in a diff.
+- **Example:** `diff_add = 10`
+
+### `colors.diff_del`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `1`
+- `kuro git`: removed lines in a diff.
+- **Example:** `diff_del = 9`
+
+### `colors.diff_hunk`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `6`
+- `kuro git`: the `@@ -1,3 +1,4 @@` hunk headers.
+- **Example:** `diff_hunk = 14`
+
+### `colors.diff_meta`
+- **Type:** integer, `-1` or `0`-`15` (ANSI slot)
+- **Default:** `-1`
+- `kuro git`: the file headers of a diff (`diff --git`, `index`, `---`, `+++`, `rename from`). `-1` draws them bold in the default text colour.
+- **Example:** `diff_meta = 12`
+
 ## Connection profiles (`connections.toml`)
 
 Not part of `config.toml`, and never committed. Copy `config/default/connections.example.toml` to

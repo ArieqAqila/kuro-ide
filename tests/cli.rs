@@ -127,3 +127,92 @@ mod ext_cli {
         assert_eq!(out, "installed `ksystem` 0.1.0 (languages: ksystem)\n");
     }
 }
+
+// ---------------------------------------------------------------- kuro git (the real binary, real throw-away repositories)
+
+mod git_cli {
+    use std::path::Path;
+    use std::process::Command;
+
+    fn kuro_git(cwd: &Path, args: &[&str], path: Option<&str>) -> (i32, String, String) {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_kuro"));
+        c.arg("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("HOME", cwd)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env_remove("KURO_CONFIG_DIR");
+        if let Some(p) = path {
+            c.env("PATH", p);
+        }
+        let out = c.output().unwrap();
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    fn repo_with_a_commit() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for args in [
+            vec!["init", "-q", "."],
+            vec!["config", "user.name", "T"],
+            vec!["config", "user.email", "t@e.invalid"],
+            vec!["config", "commit.gpgsign", "false"],
+        ] {
+            assert!(
+                Command::new("git").args(&args).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", "/dev/null").status().unwrap().success()
+            );
+        }
+        std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
+        for args in [vec!["add", "."], vec!["commit", "-q", "-m", "first"]] {
+            assert!(
+                Command::new("git").args(&args).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", "/dev/null").status().unwrap().success()
+            );
+        }
+        d
+    }
+
+    #[test]
+    fn outside_a_repository_it_prints_exactly_direktori_tidak_ada_git_and_exits_non_zero() {
+        let d = tempfile::tempdir().unwrap();
+        let (code, out, err) = kuro_git(d.path(), &[], None);
+        assert_eq!(err, "direktori tidak ada git\n");
+        assert_eq!(out, "");
+        assert_eq!(code, 128);
+        // also with -fl, and from a subfolder
+        let (code, _, err) = kuro_git(d.path(), &["-fl", "x.txt"], None);
+        assert_eq!((code, err.as_str()), (128, "direktori tidak ada git\n"));
+        std::fs::create_dir(d.path().join("sub")).unwrap();
+        let (code, _, err) = kuro_git(&d.path().join("sub"), &[], None);
+        assert_eq!((code, err.as_str()), (128, "direktori tidak ada git\n"));
+    }
+
+    #[test]
+    fn a_missing_file_gives_a_message_and_status_1_and_bad_arguments_status_2() {
+        let r = repo_with_a_commit();
+        let (code, out, err) = kuro_git(r.path(), &["-fl", "missing.txt"], None);
+        assert_eq!((code, out.as_str(), err.as_str()), (1, "", "no history for missing.txt\n"));
+        let (code, _, err) = kuro_git(r.path(), &["-fl", "../outside.txt"], None);
+        assert_eq!(code, 1);
+        assert!(err.contains("outside the repository"), "{err}");
+        let (code, _, err) = kuro_git(r.path(), &["-fl"], None);
+        assert_eq!(code, 2);
+        assert!(err.contains("-fl needs a file name"), "{err}");
+        let (code, _, err) = kuro_git(r.path(), &["--bogus"], None);
+        assert_eq!(code, 2);
+        assert!(err.contains("unknown argument"), "{err}");
+        let (code, out, _) = kuro_git(r.path(), &["--help"], None);
+        assert_eq!(code, 0);
+        assert!(out.contains("kuro git -fl FILE"));
+    }
+
+    #[test]
+    fn without_the_git_program_it_says_so() {
+        let r = repo_with_a_commit();
+        let (code, _, err) = kuro_git(r.path(), &[], Some("/nonexistent-bin-dir"));
+        assert_eq!((code, err.as_str()), (127, "git is not installed\n"));
+    }
+}
