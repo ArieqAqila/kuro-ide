@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+pub use crate::langs::{C, CPP, CSS, HTML, JAVA, JAVASCRIPT, PHP, PHP_CODE, RUBY, RUST, TOML, TYPESCRIPT, XML, YAML};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Plain,
@@ -51,11 +53,35 @@ pub struct LangSpec {
     pub brackets: bool,
     /// Flag unmatched / mismatched brackets (off for shell, where `case x in a)` is legal).
     pub bracket_errors: bool,
+    /// `/` can start a regular-expression literal (JavaScript, TypeScript).
+    pub regex_literals: bool,
+    /// Characters that start a variable-like name drawn as a builtin: `$name` (PHP), `@name` (Ruby, Java annotations).
+    pub sigils: &'static [char],
+    /// A bare word at the start of a line, followed by this character, is a key (YAML `:`, TOML `=`).
+    pub bare_key_sep: Option<char>,
+    /// Lines like `[section]` are headers (TOML).
+    pub section_headers: bool,
+    /// Rust: `'a` is a lifetime (a builtin) and `'x'` a character literal (a string).
+    pub lifetimes: bool,
+    /// C family: `#include`, `#define`, ... at the start of a line.
+    pub preprocessor: bool,
+    /// Markup languages (HTML, XML, PHP, CSS) use a small state machine that hands regions to other languages.
+    pub markup: Option<Markup>,
 }
 
-const EMPTY: &[&str] = &[];
+/// Which markup tokenizer a language uses (see `src/markup.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Markup {
+    Html,
+    Xml,
+    /// HTML with `<?php ... ?>` regions.
+    Php,
+    Css,
+}
 
-const BASE: LangSpec = LangSpec {
+pub(crate) const EMPTY: &[&str] = &[];
+
+pub(crate) const BASE: LangSpec = LangSpec {
     name: "Plain Text",
     extensions: EMPTY,
     filenames: EMPTY,
@@ -74,6 +100,13 @@ const BASE: LangSpec = LangSpec {
     operators: EMPTY,
     brackets: false,
     bracket_errors: false,
+    regex_literals: false,
+    sigils: &[],
+    bare_key_sep: None,
+    section_headers: false,
+    lifetimes: false,
+    preprocessor: false,
+    markup: None,
 };
 
 pub static PLAIN: LangSpec = BASE;
@@ -460,7 +493,28 @@ pub static LUA: LangSpec = LangSpec {
     ..BASE
 };
 
-pub static LANGS: &[&LangSpec] = &[&SQL, &GO, &PYTHON, &SHELL, &JSON, &LUA];
+/// Every selectable language, in the order the picker lists them.
+pub static LANGS: &[&LangSpec] = &[
+    &SQL,
+    &GO,
+    &PYTHON,
+    &SHELL,
+    &JSON,
+    &LUA,
+    &RUST,
+    &C,
+    &CPP,
+    &JAVA,
+    &JAVASCRIPT,
+    &TYPESCRIPT,
+    &HTML,
+    &CSS,
+    &PHP,
+    &RUBY,
+    &YAML,
+    &TOML,
+    &XML,
+];
 
 /// Every selectable mode: Plain Text first, then the languages.
 pub fn all_modes() -> Vec<&'static LangSpec> {
@@ -476,6 +530,15 @@ pub fn by_name(name: &str) -> Option<&'static LangSpec> {
         "golang" => "go",
         "py" | "python3" => "python",
         "luajit" => "lua",
+        "rs" => "rust",
+        "c++" | "cpp" | "cxx" | "cc" => "c++",
+        "js" | "node" | "nodejs" | "ecmascript" => "javascript",
+        "ts" => "typescript",
+        "htm" | "xhtml" => "html",
+        "rb" => "ruby",
+        "yml" => "yaml",
+        "phtml" => "php",
+        "svg" => "xml",
         "postgres" | "postgresql" | "mysql" | "mariadb" => "sql",
         other => other,
     };
@@ -521,15 +584,38 @@ enum State {
     },
 }
 
-fn is_ident_start(c: char) -> bool {
+pub(crate) fn is_ident_start(c: char) -> bool {
     c.is_alphabetic() || c == '_'
 }
-fn is_ident(c: char) -> bool {
+pub(crate) fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-fn starts_with_at(chars: &[char], i: usize, pat: &str) -> bool {
+pub(crate) fn starts_with_at(chars: &[char], i: usize, pat: &str) -> bool {
     pat.chars().enumerate().all(|(k, p)| chars.get(i + k) == Some(&p))
+}
+
+/// Can a `/` at `i` start a regex literal? Yes when the previous token cannot end an operand.
+fn regex_allowed(chars: &[char], i: usize) -> bool {
+    let mut j = i;
+    while j > 0 && chars[j - 1].is_whitespace() {
+        j -= 1;
+    }
+    let Some(&prev) = j.checked_sub(1).and_then(|k| chars.get(k)) else { return true };
+    if is_ident(prev) {
+        // after a word: only keywords that are followed by an expression
+        let end = j;
+        let mut start = j;
+        while start > 0 && is_ident(chars[start - 1]) {
+            start -= 1;
+        }
+        let w: String = chars[start..end].iter().collect();
+        return matches!(
+            w.as_str(),
+            "return" | "typeof" | "case" | "in" | "of" | "delete" | "void" | "throw" | "new" | "else" | "do" | "yield" | "await"
+        );
+    }
+    !matches!(prev, ')' | ']' | '"' | '\'' | '`')
 }
 
 fn lookup(spec: &LangSpec, word: &str) -> Kind {
@@ -556,6 +642,9 @@ pub fn highlight(spec: &LangSpec, lines: &[String]) -> Vec<Vec<Kind>> {
     if spec.name == PLAIN.name {
         return lines.iter().map(|l| vec![Kind::Plain; l.chars().count()]).collect();
     }
+    if let Some(m) = spec.markup {
+        return crate::markup::highlight(spec, m, lines);
+    }
     let mut state = State::Normal;
     // open brackets: (char, line, column)
     let mut stack: Vec<(char, usize, usize)> = Vec::new();
@@ -574,7 +663,7 @@ pub fn highlight(spec: &LangSpec, lines: &[String]) -> Vec<Vec<Kind>> {
     out
 }
 
-fn fill(kinds: &mut [Kind], from: usize, to: usize, k: Kind) {
+pub(crate) fn fill(kinds: &mut [Kind], from: usize, to: usize, k: Kind) {
     let to = to.min(kinds.len());
     for x in kinds.iter_mut().take(to).skip(from) {
         *x = k;
@@ -632,6 +721,82 @@ fn highlight_line(
         }
 
         let c = chars[i];
+        let first_on_line = chars[..i].iter().all(|ch| ch.is_whitespace());
+
+        // C family preprocessor directives: `#include`, `#define`, ...
+        if spec.preprocessor && c == '#' && first_on_line {
+            let mut j = i + 1;
+            while j < n && chars[j].is_whitespace() {
+                j += 1;
+            }
+            while j < n && is_ident(chars[j]) {
+                j += 1;
+            }
+            fill(kinds, i, j, Kind::Keyword);
+            i = j;
+            continue;
+        }
+        // `[section]` headers
+        if spec.section_headers && c == '[' && first_on_line {
+            let end = chars.iter().rposition(|x| *x == ']').map(|e| e + 1).unwrap_or(n);
+            if end > i {
+                fill(kinds, i, end, Kind::Keyword);
+                i = end;
+                continue;
+            }
+        }
+        // bare `key:` / `key =` at the start of a line (YAML, TOML); a leading `- ` of a YAML list is skipped
+        if let Some(sep) = spec.bare_key_sep
+            && (is_ident_start(c) || c.is_ascii_digit())
+            && chars[..i].iter().all(|ch| ch.is_whitespace() || *ch == '-')
+        {
+            let mut j = i;
+            while j < n && (is_ident(chars[j]) || chars[j] == '-' || chars[j] == '.') {
+                j += 1;
+            }
+            let mut k = j;
+            while k < n && chars[k] == ' ' {
+                k += 1;
+            }
+            let after = chars.get(k + 1);
+            if chars.get(k) == Some(&sep) && (sep != ':' || after.is_none() || after == Some(&' ')) {
+                fill(kinds, i, j, Kind::Key);
+                i = j;
+                continue;
+            }
+        }
+        // Rust lifetimes and character literals
+        if spec.lifetimes && c == '\'' {
+            let close = if chars.get(i + 1) == Some(&'\\') {
+                (i + 2..n.min(i + 12)).find(|&j| chars[j] == '\'')
+            } else if chars.get(i + 2) == Some(&'\'') {
+                Some(i + 2)
+            } else {
+                None
+            };
+            if let Some(e) = close {
+                fill(kinds, i, e + 1, Kind::String);
+                i = e + 1;
+            } else {
+                let mut j = i + 1;
+                while j < n && is_ident(chars[j]) {
+                    j += 1;
+                }
+                fill(kinds, i, j, Kind::Builtin);
+                i = j.max(i + 1);
+            }
+            continue;
+        }
+        // `$name`, `@name`
+        if spec.sigils.contains(&c) && chars.get(i + 1).is_some_and(|d| is_ident_start(*d) || *d == c) {
+            let mut j = i + 1;
+            while j < n && (is_ident(chars[j]) || chars[j] == c) {
+                j += 1;
+            }
+            fill(kinds, i, j, Kind::Builtin);
+            i = j;
+            continue;
+        }
 
         // comments
         // a block opener that begins with the line-comment marker (Lua's `--[[`) is a block comment
@@ -705,6 +870,35 @@ fn highlight_line(
             continue;
         }
 
+        // regular-expression literal: `/` where an operand is expected
+        if spec.regex_literals && c == '/' && regex_allowed(chars, i) {
+            let mut j = i + 1;
+            let mut in_class = false;
+            let mut closed = false;
+            while j < n {
+                match chars[j] {
+                    '\\' => j += 1,
+                    '[' => in_class = true,
+                    ']' => in_class = false,
+                    '/' if !in_class => {
+                        closed = true;
+                        break;
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            if closed {
+                j += 1;
+                while j < n && chars[j].is_ascii_alphabetic() {
+                    j += 1; // flags
+                }
+                fill(kinds, i, j.min(n), Kind::String);
+                i = j.min(n);
+                continue;
+            }
+        }
+
         // shell variables
         if spec.shell_vars && c == '$' {
             let start = i;
@@ -732,7 +926,7 @@ fn highlight_line(
             i += 1;
             while i < n
                 && (chars[i].is_ascii_alphanumeric()
-                    || chars[i] == '.'
+                    || (chars[i] == '.' && chars.get(i + 1) != Some(&'.'))
                     || chars[i] == '_'
                     || ((chars[i] == '+' || chars[i] == '-') && matches!(chars[i - 1], 'e' | 'E')))
             {
@@ -844,7 +1038,30 @@ mod tests {
         let mut names: Vec<_> = LANGS.iter().map(|l| l.name).collect();
         names.sort();
         names.dedup();
-        assert_eq!(names, vec!["Go", "JSON", "Lua", "Python", "SQL", "Shell"]);
+        assert_eq!(
+            names,
+            vec![
+                "C",
+                "C++",
+                "CSS",
+                "Go",
+                "HTML",
+                "JSON",
+                "Java",
+                "JavaScript",
+                "Lua",
+                "PHP",
+                "Python",
+                "Ruby",
+                "Rust",
+                "SQL",
+                "Shell",
+                "TOML",
+                "TypeScript",
+                "XML",
+                "YAML"
+            ]
+        );
     }
 
     #[test]

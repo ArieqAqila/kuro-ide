@@ -152,6 +152,33 @@ proptest! {
     }
 
     #[test]
+    fn markup_tokenizers_survive_tag_and_region_heavy_input(
+        parts in proptest::collection::vec(
+            prop_oneof![
+                Just("<".to_string()), Just(">".to_string()), Just("</".to_string()), Just("/>".to_string()), Just("<!--".to_string()),
+                Just("-->".to_string()), Just("<?php".to_string()), Just("<?".to_string()), Just("?>".to_string()), Just("<style>".to_string()),
+                Just("</style>".to_string()), Just("<script>".to_string()), Just("</script".to_string()), Just("<![CDATA[".to_string()),
+                Just("]]>".to_string()), Just("=".to_string()), Just("\"".to_string()), Just("'".to_string()), Just("&amp;".to_string()),
+                Just("&".to_string()), Just("{".to_string()), Just("}".to_string()), Just(":".to_string()), Just(";".to_string()),
+                Just("/*".to_string()), Just("*/".to_string()), Just("`".to_string()), Just("\n".to_string()), Just(" ".to_string()),
+                "[a-z]{1,6}".prop_map(String::from),
+            ],
+            0..60,
+        )
+    ) {
+        let src: String = parts.concat();
+        let lines: Vec<String> = src.split('\n').map(String::from).collect();
+        for name in ["html", "xml", "php", "css", "javascript"] {
+            let spec = syntax::by_name(name).unwrap();
+            let kinds = syntax::highlight(spec, &lines);
+            prop_assert_eq!(kinds.len(), lines.len());
+            for (l, k) in lines.iter().zip(&kinds) {
+                prop_assert_eq!(l.chars().count(), k.len(), "{}: {:?}", name, l);
+            }
+        }
+    }
+
+    #[test]
     fn bracket_depth_never_exceeds_the_number_of_openers(src in "[()\\[\\]{}a ]{0,100}") {
         let lines = vec![src.clone()];
         let openers = src.chars().filter(|c| "([{".contains(*c)).count();

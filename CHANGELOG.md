@@ -28,6 +28,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `regression_gutter_stays_absolute_*` in `tests/ui_render.rs`.
 
 ### Added
+- **More languages for `:setlang` and detection by extension**: Rust, C, C++, Java, JavaScript, TypeScript, HTML, CSS, PHP,
+  Ruby, YAML, TOML and XML (and Lua), each with keyword, builtin, string, comment, number and operator rules and bracket
+  depth colouring. HTML and PHP colour their embedded regions (`<style>` as CSS, `<script>` as JavaScript or JSON, `<?php … ?>`
+  as PHP); the rules are in `docs/CUSTOMIZATION.md` ("Languages"), checked against the code by `tests/docs_check.rs`.
+  JavaScript has template strings and regex literals; CSS has selectors, properties, values and at-rules.
 - **Scrollbars**: a vertical bar on the right edge and a horizontal bar at the bottom of the editor, each shown only when
   the text does not fit. Arrows step by one line or column, clicking the track pages, dragging the thumb scrolls; the
   thumb is the visible fraction of the content (never a background colour: reverse video thumb, dim track). Turn them

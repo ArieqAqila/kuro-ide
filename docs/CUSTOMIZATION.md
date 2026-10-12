@@ -338,18 +338,83 @@ you connect). A literal password is rejected with an error.
 
 Test-only variables (`KURO_REQUIRE_DOCKER`, `KURO_RECORD_FIXTURES`) are described in the README.
 
+## Languages (`:setlang`)
+
+`:setlang <name>` (or the picker, `:setlang` alone) sets the language mode and recolours at once; `:setlang auto` goes back
+to detection by file name, extension or `#!` line. The name is case-insensitive and the aliases below work too.
+Every mode colours keywords, builtins, literals, strings, comments, numbers and operators, and colours `() [] {}` by
+nesting depth with unmatched or mismatched ones in reverse video (markup text itself has no brackets).
+
+| Mode | `:setlang` aliases | Detected by | Notes |
+|---|---|---|---|
+| Plain Text | `text`, `plain`, `txt`, `none` | anything else | no colours |
+| SQL | `postgres`, `mysql`, `mariadb` | `.sql` | |
+| Go | `golang` | `.go`, `go.mod` | |
+| Python | `py`, `python3` | `.py`, `.pyi`, `.pyw`, `#!python` | |
+| Shell | `sh`, `bash`, `zsh`, `fish`, `ksh` | `.sh`, `.bash`, `.zsh`, `.fish`, `.ksh`, `.bashrc`, `.zshrc`, `.profile`, `.bash_profile`, `config.fish`, `#!sh` / `#!bash` / … | |
+| JSON | | `.json`, `.jsonc`, `.geojson`, `.eslintrc`, `.prettierrc` | object keys are keys |
+| Lua | `luajit` | `.lua`, `.rockspec`, `.luacheckrc`, `#!lua` | `--[[ ]]` block comments; long strings `[[ ]]` are not recognised |
+| Rust | `rs` | `.rs` | `'a` lifetimes are builtins, `'x'` characters are strings; nested block comments and raw strings `r#"…"#` are not recognised |
+| C | | `.c`, `.h` | `#include` / `#define` lines: the directive is a keyword |
+| C++ | `cpp`, `c++`, `cxx`, `cc` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.ipp` | `.h` is C |
+| Java | | `.java` | `@Annotations` are builtins |
+| JavaScript | `js`, `node`, `nodejs` | `.js`, `.mjs`, `.cjs`, `.jsx`, `#!node` / `#!deno` / `#!bun` | regex literals and template strings, see below |
+| TypeScript | `ts` | `.ts`, `.mts`, `.cts`, `.tsx` | JavaScript plus types |
+| HTML | `htm`, `xhtml` | `.html`, `.htm`, `.xhtml`, `.shtml` | embeds CSS and JavaScript |
+| CSS | | `.css` | |
+| PHP | `phtml` | `.php`, `.phtml`, `.php3`, `.php4`, `.php5`, `.phps`, `#!php` | HTML with PHP regions |
+| Ruby | `rb` | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Vagrantfile`, `#!ruby` | `@ivar`, `$global` are builtins; `=begin`/`=end` comments are not recognised |
+| YAML | `yml` | `.yml`, `.yaml`, `.clang-format`, `.gitlab-ci.yml` | `key:` at the start of a line is a key |
+| TOML | | `.toml`, `Cargo.lock`, `poetry.lock`, `Pipfile` | `[section]` lines are keywords, `key =` is a key |
+| XML | `svg` | `.xml`, `.xsd`, `.xsl`, `.xslt`, `.svg`, `.plist`, `.rss`, `.atom`, `.wsdl`, `.csproj`, `.pom` | |
+
+### How HTML, XML, PHP and CSS are coloured
+
+These are small state machines (`src/markup.rs`), not parsers: they colour what they recognise and leave the rest
+plain, so a half-typed file is never a problem.
+
+| What | Role (a palette slot in `[colors]`) |
+|---|---|
+| tag names, `<!DOCTYPE>`, `<?php` / `<?=` / `?>`, CSS element selectors and `@rules`, `!important` | keyword |
+| attribute names, CSS properties and `--custom-properties`, media features | key |
+| attribute values (quoted or not), CDATA, strings | string |
+| `<` `>` `</` `/>` `=`, CSS combinators (`>` `+` `~`) | operator |
+| `<!-- -->` and `/* */` comments | comment |
+| `&amp;` / `&#169;` entities, CSS `.class` and `#id` selectors | literal |
+| CSS numbers with units (`1.5em`, `50%`) and `#rrggbb` colours | number |
+| CSS `:hover` / `::before`, CSS functions (`url(`, `rgba(`, `calc(`), XML `<?xml ?>` | builtin |
+
+**Embedded regions.** A region is handed to the language it contains and tokenized on its own:
+
+* `<style>…</style>` → CSS. `<script>…</script>` → JavaScript (also with `type="module"`, `text/javascript`,
+  `application/javascript`); `type="application/json"` / `ld+json` / `importmap` → JSON; any other `type`
+  (`text/template`, …) is left plain.
+* In a `.php` file, `<?php … ?>`, `<?= … ?>` and a bare `<?` … `?>` → PHP; the markers are keywords. PHP regions also work
+  inside tags and attribute lists.
+* A region that is never closed runs to the end of the file. A comment or string never leaks out of its region, and an
+  unclosed `<!--` comments the rest of the file, as in a browser.
+* XML has no embedded languages: `<style>` and `<script>` are ordinary elements.
+
+**JavaScript details.** Template strings (`` `…` ``) may span lines and are one string (`${…}` is not parsed
+separately). A `/` starts a regular-expression literal, coloured as a string with its flags, when it appears where a value
+is expected (after `=`, `(`, `,`, `:`, `[`, `!`, `&`, `{`, `;`, an operator, or `return`/`typeof`/`case`/…); after an
+identifier, number, `)` or `]` it is division. A regex after `)` (`if (x) /re/.test(y)`) is therefore read as division, a known limit.
+
 ## Adding a syntax-highlighting language
 
 Highlighting is table-driven (`src/syntax.rs`); there is no per-language code.
 
-1. Add a `LangSpec` next to the existing ones. Fields: `name` (shown in the status bar), `extensions`,
+1. Add a `LangSpec` next to the existing ones (`src/syntax.rs`, or `src/langs.rs` for the newer ones). Fields: `name` (shown in the status bar), `extensions`,
    `filenames`, `shebangs` (interpreter basenames), `keywords`, `builtins`, `literals`, `line_comments`,
    `block_comment`, `string_quotes`, and flags `triple_quotes` (Python-style), `raw_quote` (Go-style backtick),
    `case_insensitive`, `shell_vars`, `key_colon` (JSON keys), `operators` (the operator tokens; the longest match wins),
-   `brackets` (colour `() [] {}` by depth) and `bracket_errors` (flag unmatched ones). Start with `..BASE` and set only what differs.
+   `brackets` (colour `() [] {}` by depth) and `bracket_errors` (flag unmatched ones). Newer flags: `regex_literals` (JavaScript),
+   `sigils` (`$name`, `@name`), `bare_key_sep` (`:` for YAML, `=` for TOML), `section_headers` (TOML `[section]`), `lifetimes`
+   (Rust `'a`), `preprocessor` (C `#include`) and `markup` (HTML, XML, PHP, CSS: a state machine in `src/markup.rs`).
+   Start with `..BASE` and set only what differs.
 2. Append `&YOUR_LANG` to the `LANGS` list.
-3. Add a test in the `tests` module of `src/syntax.rs` (see the existing `kind_of` helper) and update
-   `every_language_is_registered_and_named_uniquely`.
+3. Add tests (`tests/syntax_langs.rs` has the helpers), a snapshot (`lang_snapshot!` in `tests/snapshots.rs`), a row in the table above
+   (`tests/docs_check.rs` fails when a mode or one of its extensions is missing), and update `every_language_is_registered_and_named_uniquely`.
 4. `make test-unit`.
 
 Colours are chosen by role in `kind_style` in `src/render.rs` (configured through `[colors]`); use palette slots or modifiers only.

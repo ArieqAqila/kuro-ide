@@ -11,6 +11,8 @@ pub mod indent;
 pub mod input;
 pub mod keymap;
 pub mod keyspec;
+pub mod langs;
+pub mod markup;
 pub mod picker;
 pub mod render;
 pub mod scrollbar;

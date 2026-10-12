@@ -224,3 +224,30 @@ fn cmd_keep_selection(app: &mut App) {
     typed(app, "drop");
     press(app, "enter");
 }
+
+#[test]
+fn the_picker_scrolls_to_modes_below_the_visible_rows_and_filters_the_new_languages() {
+    let (mut app, _) = app_with("x");
+    cmd(&mut app, "setlang");
+    for _ in 0..20 {
+        press(&mut app, "down"); // Auto-detect, Plain Text and 19 languages: the 20th step is the last row
+    }
+    let s = screen(&mut app).join("\n");
+    assert!(s.contains("XML"), "the last mode is visible after scrolling down:\n{s}");
+    press(&mut app, "enter");
+    assert_eq!(app.lang.name, "XML");
+    // typing filters across all modes, by name and by extension
+    cmd(&mut app, "setlang");
+    typed(&mut app, "tom");
+    press(&mut app, "enter");
+    assert_eq!(app.lang.name, "TOML");
+    cmd(&mut app, "setlang");
+    typed(&mut app, ".mjs");
+    press(&mut app, "enter");
+    assert_eq!(app.lang.name, "JavaScript");
+    // :setlang with a name for each new mode recolours immediately
+    for (name, want) in [("rust", "Rust"), ("c++", "C++"), ("php", "PHP"), ("css", "CSS"), ("html", "HTML"), ("yaml", "YAML")] {
+        cmd(&mut app, &format!("setlang {name}"));
+        assert_eq!(app.lang.name, want);
+    }
+}

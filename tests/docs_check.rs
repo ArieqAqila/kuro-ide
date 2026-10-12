@@ -136,3 +136,51 @@ fn checker_passes_on_good_docs_and_new_code_options_would_fail() {
     assert_eq!(problems.len(), 1);
     assert!(problems[0].contains("editor.brand_new"));
 }
+
+const CUSTOMIZATION: &str = include_str!("../docs/CUSTOMIZATION.md");
+
+/// The "Languages" table row for a mode, if any.
+fn language_row(name: &str) -> Option<&'static str> {
+    CUSTOMIZATION.lines().find(|l| l.starts_with(&format!("| {name} |")))
+}
+
+#[test]
+fn every_language_mode_is_documented_with_its_extensions_and_aliases() {
+    for spec in kuro::syntax::LANGS {
+        let row =
+            language_row(spec.name).unwrap_or_else(|| panic!("`{}` has no row in the Languages table of docs/CUSTOMIZATION.md", spec.name));
+        for ext in spec.extensions {
+            assert!(row.contains(&format!(".{ext}")), "`.{ext}` of {} is not in its row: {row}", spec.name);
+        }
+        for f in spec.filenames {
+            assert!(row.contains(f), "file name {f} of {} is not in its row: {row}", spec.name);
+        }
+    }
+}
+
+#[test]
+fn the_languages_table_lists_no_mode_that_does_not_exist() {
+    let names: Vec<&str> = std::iter::once("Plain Text").chain(kuro::syntax::LANGS.iter().map(|l| l.name)).collect();
+    let in_table = CUSTOMIZATION
+        .lines()
+        .skip_while(|l| !l.starts_with("## Languages"))
+        .take_while(|l| !l.starts_with("### How HTML"))
+        .filter(|l| l.starts_with("| ") && !l.starts_with("| Mode") && !l.starts_with("|---"))
+        .map(|l| l.trim_start_matches("| ").split(" |").next().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(in_table.len(), names.len(), "{in_table:?}");
+    for n in &in_table {
+        assert!(names.contains(&n.as_str()), "the table lists `{n}` which is not a mode");
+    }
+}
+
+#[test]
+fn every_documented_alias_resolves_to_its_row() {
+    for spec in std::iter::once(&kuro::syntax::PLAIN).chain(kuro::syntax::LANGS.iter().copied()) {
+        let row = language_row(spec.name).unwrap();
+        let aliases = row.split('|').nth(2).unwrap();
+        for a in aliases.split(',').map(|a| a.trim().trim_matches('`')).filter(|a| !a.is_empty()) {
+            assert_eq!(kuro::syntax::by_name(a).map(|l| l.name), Some(spec.name), "alias `{a}` of {}", spec.name);
+        }
+    }
+}
