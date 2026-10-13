@@ -119,9 +119,9 @@ mod ext_cli {
     }
 
     #[test]
-    fn the_bundled_ksystem_extension_installs_cleanly() {
+    fn the_ksystem_extension_manifest_installs_cleanly() {
         let home = tempfile::tempdir().unwrap();
-        let src = format!("{}/extensions/ksystem", env!("CARGO_MANIFEST_DIR"));
+        let src = format!("{}/tests/fixtures/ksystem-ext", env!("CARGO_MANIFEST_DIR"));
         let (code, out, err) = kuro(home.path(), &["ext", "install", &src]);
         assert_eq!(code, 0, "{err}");
         assert_eq!(out, "installed `ksystem` 0.1.0 (languages: ksystem)\n");

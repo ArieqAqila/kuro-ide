@@ -85,7 +85,7 @@ regex ≤ 1 KiB and compiled with a size limit; names restricted to a safe alpha
 ## Install, list, remove
 
 ```fish
-kuro ext install ./extensions/ksystem   # validate, copy, seal, record
+kuro ext install ./extensions/ksystem   # validate, copy, seal, record  (as designed; the sources now live in a separate registry repository, see docs/EXTENSIONS.md)
 kuro ext list                           # name, version, languages, kuro range, where it came from
 kuro ext remove ksystem                 # delete the files and the record
 ```

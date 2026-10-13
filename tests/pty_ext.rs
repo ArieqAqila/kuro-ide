@@ -20,7 +20,7 @@ fn kuro_ext(dir: &Path, args: &[&str]) -> (i32, String) {
 }
 
 fn install_ksystem(dir: &Path) {
-    let src = format!("{}/extensions/ksystem", env!("CARGO_MANIFEST_DIR"));
+    let src = format!("{}/tests/fixtures/ksystem-ext", env!("CARGO_MANIFEST_DIR"));
     let (code, out) = kuro_ext(dir, &["ext", "install", &src]);
     assert_eq!(code, 0, "{out}");
 }

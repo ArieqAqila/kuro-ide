@@ -297,7 +297,19 @@ fn main() -> Result<()> {
     // `kuro ext ...` is a plain command: no terminal, no editor
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.first().map(String::as_str) == Some("ext") {
-        let out = kuro::ext::cli::run(&argv[1..], &kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"));
+        let ask = |question: &str| -> bool {
+            use std::io::IsTerminal;
+            if !std::io::stdin().is_terminal() {
+                return false;
+            }
+            eprint!("{question} [y/N] ");
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).is_ok() && matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+        };
+        let registry =
+            std::env::var("KURO_EXT_REGISTRY").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| kuro::ext::fetch::DEFAULT_REGISTRY.into());
+        let opts = kuro::ext::cli::Options { registry, ask: &ask };
+        let out = kuro::ext::cli::run_with(&argv[1..], &kuro::ext::store::ExtPaths::from_env(), env!("CARGO_PKG_VERSION"), &opts);
         print!("{}", out.stdout);
         eprint!("{}", out.stderr);
         std::process::exit(out.code);

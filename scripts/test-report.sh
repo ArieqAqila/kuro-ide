@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 layer_of() {
   case "$1" in
-    lib|classify_fixtures|docs_check|keybindings|cli|syntax_langs|ext_store|git_cmd|history) echo "unit" ;;
+    lib|classify_fixtures|docs_check|keybindings|cli|syntax_langs|ext_store|ext_fetch|git_cmd|history) echo "unit" ;;
     prop) echo "property/fuzz" ;;
     snapshots) echo "snapshot" ;;
     ui_render|ui_sql|ui_sql_run|ui_indent|ui_modes|ui_suggest|ui_password|ui_cursor|ui_select_keys|ui_mouse_select|ui_ctrl_rightclick|ui_hscroll|ui_scrollbars|ext_ksystem|git_ui|ui_hardundo|color_rule) echo "ui (cell buffer)" ;;

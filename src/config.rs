@@ -268,7 +268,7 @@ pub struct Config {
 }
 
 /// Environment variables the program reads (documented in docs/CUSTOMIZATION.md).
-pub const ENV_VARS: &[&str] = &["KURO_CONFIG_DIR"];
+pub const ENV_VARS: &[&str] = &["KURO_CONFIG_DIR", "KURO_EXT_REGISTRY"];
 
 pub const CLIPBOARD_BACKENDS: &[&str] = &["auto", "wl-clipboard", "xclip", "xsel", "osc52"];
 pub const KITTY_MODES: &[&str] = &["auto", "on", "off"];

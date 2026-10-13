@@ -66,9 +66,9 @@ commit, read-only; `c` lists the uncommitted changes like VS Code's Source Contr
 
 ### Extensions
 
-Optional, data-only language packs: `kuro ext install DIR`, `kuro ext list`, `kuro ext remove NAME`. The repository ships one, **ksystem**
-(`extensions/ksystem`): `kuro ext install extensions/ksystem`, then `:setlang ksystem`. Colours follow your terminal's palette and you can
-remap them. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
+Optional, data-only language packs, kept **outside** this repository (in [kuro-extensions](https://github.com/ArieqAqila/kuro-extensions) or any git repository):
+`kuro ext install ksystem` (by name), `kuro ext install URL@v1.0`, `kuro ext install DIR`, `kuro ext list`, `kuro ext remove NAME`. kuro shows what it downloaded and asks
+first. Then `:setlang ksystem`. Colours follow your terminal's palette and you can remap them. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
 
 ### SQL
 

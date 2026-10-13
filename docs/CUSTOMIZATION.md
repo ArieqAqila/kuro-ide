@@ -430,6 +430,7 @@ you connect). A literal password is rejected with an error.
 | Variable | Purpose |
 |---|---|
 | `KURO_CONFIG_DIR` | Directory holding `config.toml` and `connections.toml` (overrides `~/.config/kuro`). |
+| `KURO_EXT_REGISTRY` | Git URL of the extension registry used by `kuro ext install NAME` (default `https://github.com/ArieqAqila/kuro-extensions`; see [EXTENSIONS.md](EXTENSIONS.md)). |
 
 Test-only variables (`KURO_REQUIRE_DOCKER`, `KURO_RECORD_FIXTURES`) are described in the README.
 

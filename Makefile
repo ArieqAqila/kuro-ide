@@ -17,7 +17,7 @@ test: test-unit test-prop test-snapshots test-ui test-sync test-integration
 
 # pure logic, input parser, config, docs checks (config options and keybindings, both directions), recorded error fixtures
 test-unit:
-	$(CARGO) test --lib --test classify_fixtures --test docs_check --test keybindings --test cli --test syntax_langs --test ext_store --test git_cmd --test history
+	$(CARGO) test --lib --test classify_fixtures --test docs_check --test keybindings --test cli --test syntax_langs --test ext_store --test ext_fetch --test git_cmd --test history
 
 # property / fuzz tests, short run (256 cases each). Nightly CI runs test-prop-long.
 test-prop:

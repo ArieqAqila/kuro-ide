@@ -208,6 +208,24 @@ fn sweep(root: &Path) {
 }
 
 pub fn install(paths: &ExtPaths, source: &Path, force: bool, kuro_version: &str) -> Result<Installed, String> {
+    let origin = source.canonicalize().unwrap_or_else(|_| source.to_path_buf()).display().to_string();
+    install_from(paths, source, &origin, force, kuro_version)
+}
+
+/// What is in a source folder, validated like an install would, without installing it (for the question before a download is installed).
+pub fn peek(source: &Path, kuro_version: &str) -> Result<Manifest, String> {
+    let files = read_source(source)?;
+    let bytes = files
+        .iter()
+        .find(|(p, _)| p == MANIFEST_FILE)
+        .map(|(_, b)| b)
+        .ok_or_else(|| format!("no {MANIFEST_FILE} in the downloaded folder"))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| format!("{MANIFEST_FILE} is not valid UTF-8"))?;
+    manifest::parse(text, kuro_version).map_err(|errs| errs.join("\n"))
+}
+
+/// Install the extension in `source`, recording `origin` (a path, or the URL it was downloaded from) as where it came from.
+pub fn install_from(paths: &ExtPaths, source: &Path, origin: &str, force: bool, kuro_version: &str) -> Result<Installed, String> {
     let files = read_source(source)?;
     let manifest_bytes = files
         .iter()
@@ -259,7 +277,7 @@ pub fn install(paths: &ExtPaths, source: &Path, force: bool, kuro_version: &str)
     let entry = Entry {
         name: m.name.clone(),
         version: m.version.clone(),
-        source: source.canonicalize().unwrap_or_else(|_| source.to_path_buf()).display().to_string(),
+        source: origin.to_string(),
         installed_at: now(),
         kuro_at_install: kuro_version.to_string(),
         seal: seal::seal(&key, &files),

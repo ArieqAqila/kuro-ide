@@ -1,4 +1,4 @@
-//! The ksystem language extension (extensions/ksystem), tested against small invented fixtures that only imitate the structure of
+//! The ksystem language extension (kept in the extension registry, `kuro ext install ksystem`; a copy of its manifest is in `tests/fixtures/ksystem-ext/`), tested against small invented fixtures that only imitate the structure of
 //! ksystem files (nothing from a real system is included).
 
 mod common;
@@ -13,7 +13,7 @@ use kuro::syntax::{self, Kind, LangSpec};
 use std::collections::HashMap;
 use std::path::Path;
 
-const MANIFEST: &str = include_str!("../extensions/ksystem/kuro-ext.toml");
+const MANIFEST: &str = include_str!("fixtures/ksystem-ext/kuro-ext.toml");
 const SCREEN: &str = include_str!("fixtures/ksystem/screen.sct");
 
 fn ksystem() -> &'static LangSpec {

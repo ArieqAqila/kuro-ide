@@ -5,6 +5,7 @@
 //! to load one from a path.
 
 pub mod cli;
+pub mod fetch;
 pub mod lang;
 pub mod manifest;
 pub mod names;

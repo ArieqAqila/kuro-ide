@@ -229,8 +229,8 @@ fn the_extension_commands_readers_and_roles_are_documented() {
 
 #[test]
 fn the_ksystem_readme_names_every_role_with_its_default_slot() {
-    let readme = include_str!("../extensions/ksystem/README.md");
-    let m = kuro::ext::manifest::parse(include_str!("../extensions/ksystem/kuro-ext.toml"), env!("CARGO_PKG_VERSION")).unwrap();
+    let readme = include_str!("fixtures/ksystem-ext/README.md");
+    let m = kuro::ext::manifest::parse(include_str!("fixtures/ksystem-ext/kuro-ext.toml"), env!("CARGO_PKG_VERSION")).unwrap();
     for (role, slot) in &m.language[0].roles {
         let row = readme
             .lines()

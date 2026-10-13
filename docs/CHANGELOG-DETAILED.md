@@ -7,6 +7,16 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
+- **Extensions moved out of the kuro repository**, so the repository does not grow with every extension. `kuro ext install SOURCE` accepts a folder (as before), a git `URL` or
+  `URL@ref` (a repository with `kuro-ext.toml` at its root; ref = branch, tag or commit), or a bare `NAME`, the folder `NAME/` of the **registry** repository
+  (`https://github.com/ArieqAqila/kuro-extensions`, or `KURO_EXT_REGISTRY`). Decisions (yours): a separate repository, install by name or URL; the download is data-only and kuro
+  prints what it is (name, version, languages, origin) and asks `[y/N]` first, `--yes` skips it, and without a terminal the question counts as no. Implementation
+  (`src/ext/fetch.rs`): `git init --bare`, `git fetch --depth 1 -- URL REF` into a temporary folder, `read-tree` + `checkout-index` of the tracked files only (no `.git`), the
+  installer's own checks on the result, the folder deleted at the end; only https, http, ssh, git and file URLs, never git's `ext::` transport (which runs a command) nor
+  option-looking URLs or refs; `GIT_ALLOW_PROTOCOL` and no terminal prompts. `list` shows the URL (or `URL (name)`) as the source. The ksystem extension now lives in
+  `kuro-extensions/ksystem` (a local repository to push; this repository keeps only a copy of its manifest and README in `tests/fixtures/ksystem-ext/` for the tests, which use no network).
+  `tempfile` moved from dev-dependencies to dependencies. Tests: `tests/ext_fetch.rs` (file URLs, refs, registry by name, questions, bad downloads, links, `ext::`, force, cleanup)
+  and the classification unit tests in `src/ext/fetch.rs`.
 - Removed the arrow buttons of the scrollbars (`▲ ▼ ◀ ▶`): the whole strip is track, so a click anywhere off the thumb pages (also on the first and last cell), the thumb still drags, the wheel and the keys step. `Part::ArrowStart` / `ArrowEnd` are gone from `src/scrollbar.rs`; the geometry tests, `tests/ui_scrollbars.rs`, `tests/git_ui.rs` and the snapshots follow.
 - The scrollbars were too bulky (a two-column vertical bar and reverse-video block thumbs). They are now thin: the vertical bar is one column (`VERTICAL_WIDTH = 1`), and both bars are drawn with line glyphs: thumb `┃` / `━` in bold, track `│` / `─` dim, arrows as before. No reverse video, no background. Tests: `tests/ui_scrollbars.rs`, `tests/git_ui.rs`; snapshots regenerated.
 - `kuro git` diffs now mark **what changed inside a line**: for each removed line followed by an added line, the words that differ are drawn in reverse video (in the
