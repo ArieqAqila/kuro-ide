@@ -49,6 +49,7 @@ fn app(r: &Repo, file: Option<&str>) -> GitApp {
     let mut a = GitApp::new(r.open(), Config::default(), file.map(String::from)).unwrap();
     a.make_clipboard = Box::new(|_| Box::new(MemoryClipboard::default()));
     a.repo_name = "demo".into(); // the temp folder's name is random
+    a.wait_loaded(); // a file's history arrives in the background: most tests look at the settled screen
     a
 }
 
@@ -73,6 +74,7 @@ fn press(a: &mut GitApp, keys: &str) {
         let k = if k.chars().count() > 1 { k.to_lowercase() } else { k.to_string() };
         a.handle_key(key(&k));
     }
+    a.wait_loaded();
 }
 
 fn row_with(a: &mut GitApp, needle: &str) -> u16 {
@@ -122,18 +124,10 @@ mod views {
             press(&mut a, "Down");
         }
         press(&mut a, "Enter");
-        // the screen first says that the reading has started (git can take many seconds), then the next update does it
-        assert_eq!(a.view, View::Tree);
-        assert!(a.busy_for_test());
-        assert!(screen(&mut a).contains("Reading the history of README.md"));
-        assert!(a.tick(), "the notice is on screen: nothing read yet");
-        assert_eq!(a.view, View::Tree);
-        assert!(a.tick(), "now the history is read");
         assert_eq!(a.view, View::History);
-        assert!(!a.busy_for_test());
         let s = screen(&mut a);
         assert!(s.contains("history of README.md"), "{s}");
-        assert!(!s.contains("Reading the history"), "the notice is gone: {s}");
+        assert!(!s.contains("reading…"), "finished: {s}");
         assert!(
             s.contains("Update the readme") && s.contains("Initial import") && !s.contains("Edit main"),
             "only this file's commits:\n{s}"
@@ -572,19 +566,48 @@ pub mod pointer {
     }
 
     #[test]
-    fn a_long_file_history_is_read_in_pages_too_although_git_cannot_skip_while_following() {
+    fn a_file_history_opens_at_once_and_fills_in_while_git_is_still_reading() {
         let mut r = Repo::new();
         r.many_commits(450);
-        let mut a = app(&r, Some("count.txt"));
-        assert_eq!(a.commits.len(), 200);
-        assert!(!a.all_loaded);
-        press(&mut a, "End");
-        assert!(a.commits.len() >= 400, "the next page was loaded: {}", a.commits.len());
-        press(&mut a, "End End End");
-        assert_eq!(a.commits.len(), 450, "no commit twice, none missing");
+        let mut a = GitApp::new(r.open(), Config::default(), None).unwrap();
+        a.repo_name = "demo".into();
+        let row = a.rows.iter().position(|r| r.name == "count.txt").unwrap();
+        for _ in 0..row {
+            a.handle_key(key("down"));
+        }
+        a.handle_key(key("enter"));
+        // nothing was waited for: the history view is already there and says that it is reading
+        assert_eq!(a.view, View::History);
+        assert!(a.loading() || a.all_loaded, "started in the background");
+        let s = screen(&mut a);
+        assert!(s.contains("history of count.txt"), "{s}");
+        // the commits arrive without any key being pressed, and every one exactly once
+        a.wait_loaded();
+        assert!(!a.loading());
+        assert_eq!(a.commits.len(), 450, "none twice, none missing");
         assert!(a.all_loaded);
         let subjects: std::collections::HashSet<_> = a.commits.iter().map(|c| c.subject.clone()).collect();
         assert_eq!(subjects.len(), 450);
+        assert_eq!(a.commits[0].subject, "commit number 449", "newest first");
+    }
+
+    #[test]
+    fn going_back_to_the_tree_stops_git_and_a_file_without_history_says_so() {
+        let mut r = Repo::new();
+        r.many_commits(300);
+        let mut a = GitApp::new(r.open(), Config::default(), Some("count.txt".into())).unwrap();
+        assert_eq!(a.view, View::History);
+        a.handle_key(key("esc"));
+        a.tick();
+        assert_eq!(a.view, View::Tree);
+        assert!(!a.loading(), "git was stopped when the tree came back");
+        // a file that exists but was never committed has no history: back at the tree with a message
+        r.write("untracked.txt", "x\n");
+        let mut b = GitApp::new(r.open(), Config::default(), None).unwrap();
+        b.show_file_history("untracked.txt");
+        b.wait_loaded();
+        assert_eq!(b.view, View::Tree);
+        assert!(b.msg.contains("no history for untracked.txt"), "{}", b.msg);
     }
 }
 mod keys_and_docs {

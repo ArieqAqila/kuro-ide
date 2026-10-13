@@ -89,7 +89,7 @@ const FIELD: char = '\u{1f}';
 const RECORD: char = '\u{1e}';
 const LOG_FORMAT: &str = "%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%P";
 
-fn run_in(dir: &Path, env: &[(String, String)], args: &[&str]) -> Result<Vec<u8>, GitError> {
+fn git_command(dir: &Path, env: &[(String, String)], args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("--no-pager").args(["-c", "core.quotepath=off", "-c", "core.fsmonitor=false"]).arg("-C").arg(dir).args(args);
     cmd.env("LC_ALL", "C").env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("GIT_PAGER", "cat");
@@ -97,6 +97,11 @@ fn run_in(dir: &Path, env: &[(String, String)], args: &[&str]) -> Result<Vec<u8>
         cmd.env(k, v);
     }
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd
+}
+
+fn run_in(dir: &Path, env: &[(String, String)], args: &[&str]) -> Result<Vec<u8>, GitError> {
+    let mut cmd = git_command(dir, env, args);
     let out = cmd
         .output()
         .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { GitError::NoGit } else { GitError::Failed(e.to_string()) })?;
@@ -165,7 +170,100 @@ pub fn parse_file_log(out: &str) -> Vec<(Commit, Option<Change>)> {
         .collect()
 }
 
+/// Cuts the growing output of a `log` into whole records, so commits can be shown while git is still walking the history.
+#[derive(Default)]
+pub struct RecordStream {
+    buf: Vec<u8>,
+}
+
+impl RecordStream {
+    /// Add output; returns the commits whose records are complete (a record is complete when the next one has started).
+    pub fn push(&mut self, bytes: &[u8]) -> Vec<(Commit, Option<Change>)> {
+        self.buf.extend_from_slice(bytes);
+        match self.buf.iter().rposition(|b| *b == RECORD as u8) {
+            Some(i) if i > 0 => {
+                let done: Vec<u8> = self.buf.drain(..i).collect();
+                parse_file_log(&String::from_utf8_lossy(&done))
+            }
+            _ => vec![],
+        }
+    }
+
+    /// The output has ended: the last record is complete too.
+    pub fn finish(&mut self) -> Vec<(Commit, Option<Change>)> {
+        let rest = std::mem::take(&mut self.buf);
+        parse_file_log(&String::from_utf8_lossy(&rest))
+    }
+}
+
+/// What the reading of a file's history sends while it runs.
+pub enum LogBatch {
+    /// More commits, newest first.
+    Items(Vec<(Commit, Option<Change>)>),
+    /// git has finished (or failed, with its message).
+    Done(Result<(), String>),
+}
+
+/// `git log --follow` running in the background: commits arrive as git finds them, so the list can be shown at once instead of
+/// after the whole history was walked. Dropping it stops git.
+pub struct FileLog {
+    pub rx: std::sync::mpsc::Receiver<LogBatch>,
+    child: std::sync::Arc<std::sync::Mutex<std::process::Child>>,
+}
+
+impl Drop for FileLog {
+    fn drop(&mut self) {
+        if let Ok(mut c) = self.child.lock() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
 impl Git {
+    /// Start reading the history of `path` (renames followed) in the background.
+    pub fn spawn_file_log(&self, path: &str) -> Result<FileLog, GitError> {
+        use std::io::Read;
+        let format = format!("--format={LOG_FORMAT}");
+        let mut cmd = git_command(
+            &self.top,
+            &self.env,
+            &["log", "--follow", "--name-status", "-M", "-z", "--date=format:%Y-%m-%d %H:%M", &format, "--", path],
+        );
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { GitError::NoGit } else { GitError::Failed(e.to_string()) })?;
+        let mut stdout = child.stdout.take().expect("piped");
+        let mut stderr = child.stderr.take().expect("piped");
+        let child = std::sync::Arc::new(std::sync::Mutex::new(child));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let waiter = child.clone();
+        std::thread::spawn(move || {
+            let mut stream = RecordStream::default();
+            let mut chunk = [0u8; 16 * 1024];
+            loop {
+                match stdout.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let items = stream.push(&chunk[..n]);
+                        if !items.is_empty() && tx.send(LogBatch::Items(items)).is_err() {
+                            return; // nobody is listening any more
+                        }
+                    }
+                }
+            }
+            let items = stream.finish();
+            if !items.is_empty() && tx.send(LogBatch::Items(items)).is_err() {
+                return;
+            }
+            let mut err = String::new();
+            let _ = stderr.read_to_string(&mut err);
+            let ok = waiter.lock().ok().and_then(|mut c| c.wait().ok()).is_some_and(|s| s.success());
+            let _ = tx.send(LogBatch::Done(if ok { Ok(()) } else { Err(err.trim().to_string()) }));
+        });
+        Ok(FileLog { rx, child })
+    }
+
     pub fn open(dir: &Path, env: Vec<(String, String)>) -> Result<Git, GitError> {
         let top = toplevel(dir, &env)?;
         Ok(Git { top, env })
@@ -225,19 +323,30 @@ impl Git {
         Ok(parse_log(&text(self.run(&args)?)))
     }
 
-    /// The history of one file, following renames, in **one** walk of the history (walking 100,000 commits takes seconds, so the
-    /// commits and the path the file had in each are read together): the newest `count` commits, each with the
-    /// change that touched the file (a rename shows as an `R` change). There is no `skip`: git cannot follow a rename across skipped
-    /// commits (it finds nothing after them), so a longer history is read again from the start with a larger `count`.
+    /// The newest `count` commits that touched `path` (renames followed), each with the change made to the file; reads the same stream as
+    /// the screen does and stops git once it has enough.
     pub fn file_history(&self, path: &str, count: usize) -> Result<Vec<(Commit, Option<Change>)>, GitError> {
         if !self.has_commits() {
             return Ok(vec![]);
         }
-        let count = format!("--max-count={count}");
-        let format = format!("--format={LOG_FORMAT}");
-        let out =
-            self.run(&["log", "--follow", "--name-status", "-M", "-z", "--date=format:%Y-%m-%d %H:%M", &format, &count, "--", path])?;
-        Ok(parse_file_log(&text(out)))
+        let log = self.spawn_file_log(path)?;
+        let mut out = vec![];
+        while let Ok(batch) = log.rx.recv() {
+            match batch {
+                LogBatch::Items(v) => {
+                    out.extend(v);
+                    if out.len() >= count {
+                        out.truncate(count);
+                        break;
+                    }
+                }
+                LogBatch::Done(r) => {
+                    r.map_err(GitError::Failed)?;
+                    break;
+                }
+            }
+        }
+        Ok(out)
     }
 
     /// The hash of git's empty tree (differs between SHA-1 and SHA-256 repositories).
@@ -364,6 +473,42 @@ mod tests {
         assert_eq!((f[0].0.hash.as_str(), f[0].0.subject.as_str(), f[0].0.parents.len()), ("h2", "subject h2", 2));
         assert_eq!(f[0].1.as_ref().unwrap().old_path.as_deref(), Some("a.txt"));
         assert_eq!(f[1].1.as_ref().unwrap().status, 'A');
+    }
+
+    #[test]
+    fn a_log_cut_at_any_byte_gives_the_same_commits_as_the_whole_log() {
+        let rec = |h: &str, extra: &str| {
+            format!("\u{1e}{h}\u{1f}{h}\u{1f}an é\u{1f}e@x\u{1f}2026-01-02 03:04\u{1f}subject {h} ✓\u{1f}p1\0\n{extra}")
+        };
+        let whole = format!("{}{}{}", rec("h3", "M\0a.txt\0"), rec("h2", "R090\0a.txt\0b.txt\0"), rec("h1", "A\0a.txt\0"));
+        let expected = parse_file_log(&whole);
+        assert_eq!(expected.len(), 3);
+        let bytes = whole.as_bytes();
+        for cut in 0..=bytes.len() {
+            let mut st = RecordStream::default();
+            let mut got = st.push(&bytes[..cut]);
+            got.extend(st.push(&bytes[cut..]));
+            got.extend(st.finish());
+            assert_eq!(got, expected, "cut at byte {cut}");
+        }
+        // one byte at a time, as a slow pipe could deliver it
+        let mut st = RecordStream::default();
+        let mut got = vec![];
+        for b in bytes {
+            got.extend(st.push(&[*b]));
+        }
+        got.extend(st.finish());
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn a_record_is_only_released_when_the_next_one_has_started() {
+        let mut st = RecordStream::default();
+        let first = "\u{1e}h1\u{1f}h1\u{1f}a\u{1f}e\u{1f}d\u{1f}s\u{1f}\0\nA\0f\0";
+        assert!(st.push(first.as_bytes()).is_empty(), "it might still grow");
+        let out = st.push("\u{1e}h2".as_bytes());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0.hash, "h1");
     }
 
     #[test]

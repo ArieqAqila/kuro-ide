@@ -129,9 +129,9 @@ pub struct GitApp {
     /// Extension languages and terminal colours, handed to the read-only file view.
     pub ext_langs: Vec<&'static crate::syntax::LangSpec>,
     pub palette: Option<crate::palette::Palette>,
-    /// A file whose history is still to be read: the screen first shows that kuro is working (git can take many seconds on a
-    /// large repository), the next `tick` does the reading. The flag says the notice has been put on screen.
-    pending: Option<(String, bool)>,
+    /// The history of a file that git is still reading in the background (it can take many seconds on a large repository):
+    /// commits are added to the list as they arrive. Dropping it stops git.
+    loader: Option<cmd::FileLog>,
 }
 
 fn text_lines(s: &str) -> Vec<String> {
@@ -177,11 +177,18 @@ impl GitApp {
             make_clipboard,
             ext_langs: vec![],
             palette: None,
-            pending: None,
+            loader: None,
         };
         app.rebuild_tree();
         match file {
-            Some(f) => app.show_file_history(&f)?,
+            Some(f) => {
+                // a file that is not in the current tree may have been deleted: finding out takes a walk of the history, so it is checked
+                // first (a file that exists starts at once)
+                if !app.files.contains(&f) && !app.git.has_history(&f) {
+                    return Err(GitError::Failed(format!("no history for {f}")));
+                }
+                app.show_file_history(&f);
+            }
             None => {
                 app.load_history(Scope::Repo)?;
                 app.view = if app.git.has_commits() { View::Tree } else { View::History };
@@ -243,29 +250,12 @@ impl GitApp {
         self.load_more()
     }
 
-    /// Load the next page of commits.
+    /// Load the next page of commits (the history of the repository; a file's history arrives on its own, see `tick`).
     pub fn load_more(&mut self) -> Result<(), GitError> {
-        if self.all_loaded {
+        if self.all_loaded || matches!(self.scope, Scope::File(_)) {
             return Ok(());
         }
-        let page = match self.scope.clone() {
-            Scope::Repo => self.git.log(None, false, self.commits.len(), PAGE)?,
-            // one walk gives the commits and the change each made to the file
-            // (git cannot skip commits while following renames, so the history is read again from the start, one page longer)
-            Scope::File(f) => {
-                let wanted = self.commits.len() + PAGE;
-                let mut commits = vec![];
-                for (commit, change) in self.git.file_history(&f, wanted)? {
-                    if let Some(c) = change {
-                        self.followed.insert(commit.hash.clone(), c);
-                    }
-                    commits.push(commit);
-                }
-                self.all_loaded = commits.len() < wanted;
-                self.commits = commits;
-                return Ok(());
-            }
-        };
+        let page = self.git.log(None, false, self.commits.len(), PAGE)?;
         if page.len() < PAGE {
             self.all_loaded = true;
         }
@@ -273,25 +263,88 @@ impl GitApp {
         Ok(())
     }
 
-    /// Show the history of `path` after the next screen update, which tells the user that the reading has started.
-    pub fn request_file_history(&mut self, path: &str) {
-        self.msg = format!("Reading the history of {path} … a large repository can take a while");
-        self.pending = Some((path.to_string(), false));
-    }
-
-    /// Show the history of `path`; an error message when it has none.
-    pub fn show_file_history(&mut self, path: &str) -> Result<(), GitError> {
-        self.load_history(Scope::File(path.to_string()))?;
-        if self.commits.is_empty() {
-            self.scope = Scope::Repo;
-            return Err(GitError::Failed(format!("no history for {path}")));
-        }
+    /// Show the history of `path` at once and let git fill the list in the background.
+    pub fn show_file_history(&mut self, path: &str) {
+        self.scope = Scope::File(path.to_string());
+        self.commits.clear();
+        self.followed.clear();
+        self.all_loaded = false;
+        self.history = Scroll::default();
         self.view = View::History;
         self.back = vec![View::Tree];
-        Ok(())
+        self.loader = None;
+        match self.git.spawn_file_log(path) {
+            Ok(l) => self.loader = Some(l),
+            Err(e) => {
+                self.all_loaded = true;
+                self.msg = e.to_string();
+            }
+        }
+    }
+
+    /// Is git still reading a file's history?
+    pub fn loading(&self) -> bool {
+        self.loader.is_some()
+    }
+
+    /// Take what the background reading has found so far; returns true when something on screen changed.
+    pub fn tick(&mut self) -> bool {
+        // leaving the history for the tree stops the reading
+        if self.view == View::Tree && self.loader.is_some() {
+            self.loader = None;
+        }
+        let mut changed = false;
+        let mut finished: Option<Result<(), String>> = None;
+        if let Some(l) = &self.loader {
+            while let Ok(batch) = l.rx.try_recv() {
+                changed = true;
+                match batch {
+                    cmd::LogBatch::Items(items) => {
+                        for (commit, change) in items {
+                            if let Some(c) = change {
+                                self.followed.insert(commit.hash.clone(), c);
+                            }
+                            self.commits.push(commit);
+                        }
+                    }
+                    cmd::LogBatch::Done(r) => {
+                        finished = Some(r);
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(r) = finished {
+            self.loader = None;
+            self.all_loaded = true;
+            match r {
+                Ok(()) if self.commits.is_empty() => {
+                    let name = match &self.scope {
+                        Scope::File(f) => f.clone(),
+                        Scope::Repo => String::new(),
+                    };
+                    self.msg = format!("no history for {name}");
+                    let _ = self.load_history(Scope::Repo);
+                    self.view = View::Tree;
+                }
+                Ok(()) => {}
+                Err(e) => self.msg = e,
+            }
+        }
+        changed
+    }
+
+    /// Wait until the background reading is finished (tests, and anything that needs the whole list).
+    pub fn wait_loaded(&mut self) {
+        let start = std::time::Instant::now();
+        while self.loader.is_some() && start.elapsed() < std::time::Duration::from_secs(60) {
+            self.tick();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 
     fn show_repo_history(&mut self) {
+        self.loader = None;
         if let Err(e) = self.load_history(Scope::Repo) {
             self.msg = e.to_string();
         }
@@ -513,7 +566,7 @@ impl GitApp {
                     }
                     self.rebuild_tree();
                 } else {
-                    self.request_file_history(&row.path);
+                    self.show_file_history(&row.path);
                 }
             }
             View::History => {
@@ -734,29 +787,6 @@ impl GitApp {
         let cur = self.offset(vertical) as isize;
         self.set_offset(vertical, (cur + d).max(0) as usize);
     }
-
-    /// Is a file history waiting to be read (tests)?
-    pub fn busy_for_test(&self) -> bool {
-        self.pending.is_some()
-    }
-
-    /// Do the reading that `request_file_history` announced, one update after the notice was drawn.
-    pub fn tick(&mut self) -> bool {
-        match self.pending.take() {
-            Some((path, false)) => {
-                self.pending = Some((path, true));
-                true
-            }
-            Some((path, true)) => {
-                self.msg.clear();
-                if let Err(e) = self.show_file_history(&path) {
-                    self.msg = e.to_string();
-                }
-                true
-            }
-            None => false,
-        }
-    }
 }
 
 impl crate::screen::Screen for GitApp {
@@ -779,7 +809,7 @@ impl crate::screen::Screen for GitApp {
         GitApp::tick(self)
     }
     fn busy(&self) -> bool {
-        self.pending.is_some()
+        false // `tick` reports every batch of commits that arrives, which is what makes the screen update
     }
     fn quit(&self) -> bool {
         self.quit

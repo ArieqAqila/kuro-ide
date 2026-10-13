@@ -29,6 +29,11 @@ fn row_of(screen: &[String], needle: &str) -> u16 {
     screen.iter().position(|r| r.contains(needle)).unwrap_or_else(|| panic!("{needle:?} not on screen:\n{}", screen.join("\n"))) as u16
 }
 
+/// The whole first frame: the text *and* the status bar (the last row drawn), so a test never looks at a half-drawn screen.
+fn drawn(s: &[String], status: &str) -> bool {
+    s.iter().any(|r| r.contains("PGM_FIELDS")) && s.iter().any(|r| r.contains(status))
+}
+
 #[test]
 fn an_installed_extension_colours_its_files_with_palette_colours_only() {
     let dir = tempfile::tempdir().unwrap();
@@ -38,7 +43,7 @@ fn an_installed_extension_colours_its_files_with_palette_colours_only() {
     let file = dir.path().join("sct100");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let pty = Pty::spawn(dir.path(), &cfg, Some(&file), &[]);
-    let s = pty.wait_for("the screen is drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("the screen is drawn", |s| drawn(s, "ksystem"));
     assert!(s.iter().any(|r| r.contains("ksystem")), "the status bar names the language:\n{}", s.join("\n"));
     let cols = |needle: &str| s[row_of(&s, needle) as usize].find(needle).unwrap() as u16;
     let at = |needle: &str| pty.fg_at(row_of(&s, needle), cols(needle));
@@ -65,7 +70,7 @@ fn the_users_colour_mapping_changes_a_role_and_minus_one_is_the_default_text() {
     let file = dir.path().join("sct1");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let pty = Pty::spawn(dir.path(), &cfg, Some(&file), &[]);
-    let s = pty.wait_for("drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("drawn", |s| drawn(s, "ksystem"));
     let at = |needle: &str| pty.fg_at(row_of(&s, needle), s[row_of(&s, needle) as usize].find(needle).unwrap() as u16);
     assert_eq!(at("lcount  "), vt100::Color::Idx(6), "slot 6 (cyan)");
     assert_eq!(at("cready  "), vt100::Color::Default, "-1: the terminal's own text colour");
@@ -78,7 +83,7 @@ fn without_the_extension_the_same_file_is_plain_text() {
     let file = dir.path().join("sct100");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let pty = Pty::spawn(dir.path(), CFG, Some(&file), &[]);
-    let s = pty.wait_for("drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("drawn", |s| drawn(s, "Plain Text"));
     assert!(s.iter().any(|r| r.contains("Plain Text")));
     assert_eq!(pty.fg_at(row_of(&s, "SCREEN 100"), 4), vt100::Color::Default);
 }
@@ -93,7 +98,7 @@ fn a_tampered_extension_is_skipped_with_a_warning_and_kuro_still_starts() {
     let file = dir.path().join("sct100");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let mut pty = Pty::spawn(dir.path(), CFG, Some(&file), &[]);
-    let s = pty.wait_for("drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("drawn", |s| drawn(s, "Plain Text"));
     assert!(s.iter().any(|r| r.contains("Plain Text")), "the extension did not load");
     pty.send("\x10"); // Ctrl+P: the command line (the editor is modeless here)
     pty.send("warnings\r");
@@ -113,7 +118,7 @@ fn colour_slots(theme: Option<Theme>, extra_cfg: &str) -> [vt100::Color; 4] {
     let file = dir.path().join("sct100");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let pty = Pty::spawn_themed(dir.path(), &cfg, Some(&file), &[], Term::Kitty, theme);
-    let s = pty.wait_for("drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("drawn", |s| drawn(s, "ksystem"));
     let in_row = |row: &str, token: &str| {
         let r = row_of(&s, row);
         pty.fg_at(r, s[r as usize].find(token).unwrap() as u16)
@@ -159,7 +164,7 @@ fn a_role_the_user_mapped_is_never_changed_by_the_adaptation() {
     let file = dir.path().join("sct1");
     std::fs::copy(format!("{}/tests/fixtures/ksystem/screen.sct", env!("CARGO_MANIFEST_DIR")), &file).unwrap();
     let pty = Pty::spawn_themed(dir.path(), &cfg, Some(&file), &[], Term::Kitty, Some(Theme::light()));
-    let s = pty.wait_for("drawn", |s| s.iter().any(|r| r.contains("PGM_FIELDS")));
+    let s = pty.wait_for("drawn", |s| drawn(s, "ksystem"));
     let r = row_of(&s, "cready");
     assert_eq!(pty.fg_at(r, s[r as usize].find("cready").unwrap() as u16), vt100::Color::Idx(11), "pinned, even if pale");
 }

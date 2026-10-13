@@ -161,7 +161,10 @@ pub fn render(app: &mut GitApp, buf: &mut Buffer, area: Rect) {
     };
     let title = match app.view {
         View::Tree => format!(" kuro git · {repo} · {}", app.head.label()),
-        View::History => format!(" kuro git · {repo} · {} · {scope}", app.head.label()),
+        View::History => {
+            let reading = if app.loading() { format!(" · reading… {} found so far", app.commits.len()) } else { String::new() };
+            format!(" kuro git · {repo} · {} · {scope}{reading}", app.head.label())
+        }
         View::Commit => format!(" kuro git · {repo} · commit {}", app.detail.as_ref().map_or("", |d| d.commit.short.as_str())),
         View::Diff => format!(" kuro git · {}", app.diff_title),
     };
@@ -241,6 +244,9 @@ fn draw_tree(app: &GitApp, buf: &mut Buffer, r: Rect) {
 }
 
 fn draw_history(app: &GitApp, buf: &mut Buffer, r: Rect) {
+    if app.commits.is_empty() && app.loading() {
+        return empty_note(buf, r, "reading the history … the commits appear as git finds them (a large repository can take a while)");
+    }
     if app.commits.is_empty() {
         return empty_note(buf, r, if app.git.has_commits() { "no commits for this path" } else { "no commits yet" });
     }

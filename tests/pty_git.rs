@@ -72,7 +72,9 @@ fn fl_opens_one_files_history_directly() {
     let r = repo();
     let dir = tempfile::tempdir().unwrap();
     let mut pty = spawn(dir.path(), &r, &["git", "-fl", "src/main.rs"]);
-    let s = pty.wait_for("the file history", |s| screen_has(s, "history of src/main.rs"));
+    // the screen opens at once; the commits arrive while git is still reading
+    let s =
+        pty.wait_for("the file history with its commits", |s| screen_has(s, "history of src/main.rs") && screen_has(s, "Initial import"));
     assert!(screen_has(&s, "Edit main, add notes") && screen_has(&s, "Initial import"), "{}", s.join("\n"));
     assert!(!screen_has(&s, "kuro git · demo · on"), "no tree first");
     pty.send("\x11"); // Ctrl+Q

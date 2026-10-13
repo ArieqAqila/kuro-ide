@@ -7,20 +7,17 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
-- `kuro git` was very slow when you opened a file's history on a large repository (a test repository of about 108,000 commits: roughly 28 seconds). Cause: three
-  separate walks of the whole history (does the file have history, the renames, the commits). It is now one `git log --follow --name-status` walk (about 9 seconds
-  there, the rest is git's own cost), the file list is shown with `Reading the history of … a large repository can take a while` while it works (the reading starts one
-  screen update later), and `kuro git -fl FILE` prints that line before the screen opens (only when stderr is a terminal). Also fixed: loading the next page of a
-  file's history after 200 commits found nothing, because git cannot skip commits while following renames; the history is now read again from the start with a larger
-  limit. Tests: `tests/git_cmd.rs`, `tests/git_ui.rs` (`a_long_file_history_is_read_in_pages_too_…`, the notice in `enter_on_a_file_…`), the `parse_file_log` unit test.
-  `docs/GIT.md` has a "Speed on large repositories" section (commit graph with `--changed-paths`).
-- All messages are English now. The only Indonesian one, printed by `kuro git` outside a repository (`direktori tidak ada git`, the wording from the first task
-  description), is `this directory is not in a git repository`, still on standard error with exit status 128. Tests: `tests/cli.rs`, `tests/git_cmd.rs`.
+- `kuro git` was very slow when you opened a file's history on a large repository (a test repository of about 108,000 commits: roughly 28 seconds with a blank
+  screen). Cause: three separate walks of the whole history (does the file have history, the renames, the commits), each finished before anything was shown. Now one
+  `git log --follow --name-status` runs in a background thread and sends the commits as git prints them (`RecordStream` cuts the growing output into whole records,
+  tested at every possible byte boundary). The history view opens at once with `reading… N found so far` in the header; measured with a pty on that repository: view
+  after 0.01 s, first commit after 1.0 s, all 51 commits after about 6 s (git needs about 9 s to be sure there is nothing older). Going back to the tree, or quitting,
+  stops git. Also fixed: loading the next page of a file's history after 200 commits found nothing, because git cannot skip commits while following renames; a file's
+  history is now one stream, so there are no pages. `docs/GIT.md` has a "Speed on large repositories" section (commit graph with `--changed-paths`). Tests:
+  `src/gitview/cmd.rs` (record stream), `tests/git_ui.rs` (`a_file_history_opens_at_once_…`, `going_back_to_the_tree_stops_git_…`), `tests/pty_git.rs`.
 
-### Changed
-- The vertical scrollbar is now two columns wide (`scrollbar::VERTICAL_WIDTH`), in the editor and in `kuro git`: a terminal cell is about twice as tall as wide,
-  so one column looked half as thick as the one-row horizontal bar. Arrows and thumb fill both columns, the track line is drawn in the first; a click in either column
-  works. Snapshots `scrollbars_80x24`, `scrollbars_120x40` and `gutter_three_digits_end` were regenerated for it. Tests: `tests/ui_scrollbars.rs`.
+- Flaky pty tests in `tests/pty_ext.rs` (they failed now and then when the machine was busy): they looked at the screen as soon as the text was there, before the status
+  bar, the last row of a frame, was drawn. They now wait for the whole first frame.
 
 ### Added
 - Alt + vertical wheel scrolls sideways, like Shift + wheel, in the text and in the result table. Some terminals (foot among them) use Shift with the

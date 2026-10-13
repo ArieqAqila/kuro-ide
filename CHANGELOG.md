@@ -7,7 +7,7 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 ## [Unreleased]
 
 ### Changed
-- `kuro git`: the history of a file is read in one pass instead of three (about 3 times faster on a repository of 100,000 commits), the screen says that it is working instead of looking frozen, and `docs/GIT.md` explains how to speed git up with a commit graph.
+- `kuro git`: a file's history opens at once and fills in while git is still reading, like gitk (on a repository of 100,000 commits the first commit appears after about a second instead of after 30 seconds); it is read in one pass instead of three; leaving the history stops git. `docs/GIT.md` explains how to speed git up with a commit graph.
 - `kuro git` outside a repository now prints `this directory is not in a git repository` (it was an Indonesian message, `direktori tidak ada git`); exit status 128 as before.
 
 ### Changed
