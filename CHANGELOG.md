@@ -7,6 +7,9 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 ## [Unreleased]
 
 ### Changed
+- `kuro git` outside a repository now prints `this directory is not in a git repository` (it was an Indonesian message, `direktori tidak ada git`); exit status 128 as before.
+
+### Changed
 - The vertical scrollbar is two columns wide (also in `kuro git`), so it looks as thick as the horizontal one.
 
 ### Added
@@ -21,7 +24,7 @@ Major update (0.1.0 → 0.2.0). The bundled ksystem extension now declares `kuro
 
 ### Added
 - **Hard undo**: `:hardundo` / `:hardundo all` restore files to how they were before kuro first wrote them, even after every terminal closed; `kuro history list|show|delete|clear`; nothing is automatic.
-- **`kuro git`** and `kuro git -fl FILE`: read-only history browser (tree, file history with renames, commits, diffs). Outside a repository: `direktori tidak ada git`, exit 128.
+- **`kuro git`** and `kuro git -fl FILE`: read-only history browser (tree, file history with renames, commits, diffs). Outside a repository: `this directory is not in a git repository`, exit 128.
 - **Extension system**: `kuro ext install|remove|list`, data-only language packs, sealed so only kuro loads them.
 - **ksystem extension**: own colours for locals, calcs, file fields and indexes; `ui.adaptive_colors` follows your terminal's palette.
 - **Scrollbars** (vertical and horizontal), clickable and draggable.

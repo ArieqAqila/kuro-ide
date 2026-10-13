@@ -194,7 +194,7 @@ fn git_main(args: &[String]) -> Result<()> {
     let git = match Git::open(&cwd, vec![]) {
         Ok(g) => g,
         Err(GitError::NotRepo) => {
-            eprintln!("direktori tidak ada git");
+            eprintln!("this directory is not in a git repository");
             std::process::exit(128);
         }
         Err(GitError::NoGit) => {

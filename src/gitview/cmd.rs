@@ -22,7 +22,7 @@ impl std::fmt::Display for GitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GitError::NoGit => write!(f, "git is not installed"),
-            GitError::NotRepo => write!(f, "direktori tidak ada git"),
+            GitError::NotRepo => write!(f, "this directory is not in a git repository"),
             GitError::Failed(m) => write!(f, "{m}"),
         }
     }

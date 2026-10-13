@@ -176,18 +176,18 @@ mod git_cli {
     }
 
     #[test]
-    fn outside_a_repository_it_prints_exactly_direktori_tidak_ada_git_and_exits_non_zero() {
+    fn outside_a_repository_it_prints_exactly_the_english_message_and_exits_non_zero() {
         let d = tempfile::tempdir().unwrap();
         let (code, out, err) = kuro_git(d.path(), &[], None);
-        assert_eq!(err, "direktori tidak ada git\n");
+        assert_eq!(err, "this directory is not in a git repository\n");
         assert_eq!(out, "");
         assert_eq!(code, 128);
         // also with -fl, and from a subfolder
         let (code, _, err) = kuro_git(d.path(), &["-fl", "x.txt"], None);
-        assert_eq!((code, err.as_str()), (128, "direktori tidak ada git\n"));
+        assert_eq!((code, err.as_str()), (128, "this directory is not in a git repository\n"));
         std::fs::create_dir(d.path().join("sub")).unwrap();
         let (code, _, err) = kuro_git(&d.path().join("sub"), &[], None);
-        assert_eq!((code, err.as_str()), (128, "direktori tidak ada git\n"));
+        assert_eq!((code, err.as_str()), (128, "this directory is not in a git repository\n"));
     }
 
     #[test]

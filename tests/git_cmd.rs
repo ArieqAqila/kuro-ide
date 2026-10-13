@@ -14,7 +14,7 @@ fn outside_a_repository_is_reported_not_a_repo() {
     std::fs::create_dir(d.path().join("sub")).unwrap();
     assert_eq!(toplevel(&d.path().join("sub"), &env), Err(GitError::NotRepo));
     assert_eq!(toplevel(&d.path().join("missing"), &env), Err(GitError::NotRepo));
-    assert_eq!(GitError::NotRepo.to_string(), "direktori tidak ada git", "the exact message");
+    assert_eq!(GitError::NotRepo.to_string(), "this directory is not in a git repository", "the exact message");
     assert!(Git::open(d.path(), env).is_err());
 }
 

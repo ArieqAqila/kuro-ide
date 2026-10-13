@@ -9,7 +9,7 @@ Status: **proposed, waiting for approval.** Nothing is implemented yet.
    The cost is that `git` must be installed (it is where a git history browser is useful anyway; without it `kuro git` prints `git is not installed`
    and exits 127) and that output must be parsed. Alternatives: `gix` (pure Rust, large dependency tree and
    compile time) or `git2` (needs libgit2). I would only switch if you want it to work without a `git` binary.
-2. **Where does `direktori tidak ada git` go and what is the exit code?** Recommended: **standard error**, a single line
+2. **Where does `this directory is not in a git repository` go and what is the exit code?** Recommended: **standard error**, a single line
    with a newline, **exit code 128** (what `git` itself uses outside a repository). Stdout and exit code 1 are equally easy.
 3. **Other messages:** only that one is in Indonesian in your spec; I would keep the rest of kuro's UI in English. Please
    say if you want them in Indonesian too.
@@ -23,7 +23,7 @@ kuro git                  # browse the repository that contains the current dire
 kuro git -fl src/app.rs   # open the history of one file directly (path relative to the current directory)
 ```
 
-Not inside a repository (checked with `git rev-parse --show-toplevel`): print `direktori tidak ada git`, exit non-zero.
+Not inside a repository (checked with `git rev-parse --show-toplevel`): print `this directory is not in a git repository`, exit non-zero.
 `-fl` with a file that has no history in this repository: `no history for <path>` on stderr, exit 1. A repository with no commits opens normally and says
 `no commits yet`; a detached HEAD shows `HEAD detached at <short hash>` in the header.
 

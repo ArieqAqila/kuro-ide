@@ -7,6 +7,10 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
+- All messages are English now. The only Indonesian one, printed by `kuro git` outside a repository (`direktori tidak ada git`, the wording from the first task
+  description), is `this directory is not in a git repository`, still on standard error with exit status 128. Tests: `tests/cli.rs`, `tests/git_cmd.rs`.
+
+### Changed
 - The vertical scrollbar is now two columns wide (`scrollbar::VERTICAL_WIDTH`), in the editor and in `kuro git`: a terminal cell is about twice as tall as wide,
   so one column looked half as thick as the one-row horizontal bar. Arrows and thumb fill both columns, the track line is drawn in the first; a click in either column
   works. Snapshots `scrollbars_80x24`, `scrollbars_120x40` and `gutter_three_digits_end` were regenerated for it. Tests: `tests/ui_scrollbars.rs`.
@@ -63,7 +67,7 @@ declares `kuro = ">=0.2, <0.3"`; extensions that require `<0.2` must be updated.
 - **`kuro git`**: a read-only history browser for the git repository you are in: the file tree, a file's history (renames followed), the
   history of the repository, a commit with its changed files, and the diff of a commit or of one file, with scrollbars and mouse. `o` opens a
   file as it was at a commit in the editor, read-only. `kuro git -fl FILE` opens one file's history directly. Outside a repository it prints
-  `direktori tidak ada git` and exits with status 128. Uses the `git` command (read-only, never runs a repository's configured diff programs).
+  `this directory is not in a git repository` and exits with status 128. Uses the `git` command (read-only, never runs a repository's configured diff programs).
   New colour roles `colors.diff_add`, `diff_del`, `diff_hunk`, `diff_meta`. See `docs/GIT.md`.
 - **Extension system** (`kuro ext install DIR | remove NAME | list`): optional, data-only language definitions in a TOML manifest, checked
   against this kuro's version, installed with a seal so only extensions installed by kuro load, recorded in a registry that is replaced

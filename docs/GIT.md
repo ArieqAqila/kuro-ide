@@ -7,7 +7,7 @@ kuro git                    # the file tree (with each file's history) and the h
 kuro git -fl src/app.rs     # the commit history of one file, renames followed
 ```
 
-* Not inside a git repository: prints `direktori tidak ada git` on standard error and exits with status **128** (what `git` itself uses).
+* Not inside a git repository: prints `this directory is not in a git repository` on standard error and exits with status **128** (what `git` itself uses).
   `git` itself not installed: `git is not installed`, status 127. `-fl` with a file that has no history: `no history for <file>`, status 1.
 * Works from any folder inside the repository. `-fl FILE` is relative to the current folder (`..` works; the file may have been deleted).
 * A repository with no commits opens and says `no commits yet`. A detached HEAD is named in the header (`HEAD detached at 1a2b3c4`).
