@@ -45,6 +45,7 @@ fn list_len(app: &GitApp) -> usize {
         View::History => app.commits.len(),
         View::Commit => app.detail.as_ref().map_or(0, |d| d.changes.len()),
         View::Diff => app.diff.len(),
+        View::Changes => app.changes.len(),
     }
 }
 
@@ -93,6 +94,7 @@ pub fn row_at(app: &GitApp, area: Rect, x: u16, y: u16) -> Option<usize> {
         View::Tree => app.tree.top,
         View::History => app.history.top,
         View::Commit => app.files_scroll.top,
+        View::Changes => app.changes_scroll.top,
         View::Diff => return None,
     };
     let row = top + (y - l.y) as usize;
@@ -140,10 +142,12 @@ fn put(buf: &mut Buffer, r: Rect, y: u16, text: &str, style: Style) {
 
 fn hints(app: &GitApp) -> &'static str {
     match app.view {
-        View::Tree => "↑↓ move  Enter open  a all history  q quit",
-        View::History => "↑↓ move  Enter commit  d diff  Tab tree  Esc back  q quit",
+        View::Tree => "↑↓ move  Enter open  a all history  c changes  q quit",
+        View::History => "↑↓ move  Enter commit  d diff  c changes  Tab tree  Esc back  q quit",
         View::Commit => "↑↓ move  Enter file diff  d whole diff  o open file  n/p commit  Esc back  q quit",
+        View::Diff if app.wt_diff.is_some() => "↑↓←→ scroll  n/p changed file  x discard  Esc back  q quit",
         View::Diff => "↑↓←→ scroll  n/p commit  o open file  Esc back  q quit",
+        View::Changes => "↑↓ move  Enter diff  x discard  X discard all  r refresh  Esc back  q quit",
     }
 }
 
@@ -160,7 +164,12 @@ pub fn render(app: &mut GitApp, buf: &mut Buffer, area: Rect) {
         Scope::File(f) => format!("history of {f}"),
     };
     let title = match app.view {
-        View::Tree => format!(" kuro git · {repo} · {}", app.head.label()),
+        View::Tree => {
+            let n = app.changes.len();
+            let badge = if n == 0 { String::new() } else { format!(" · {n} change{} (c)", if n == 1 { "" } else { "s" }) };
+            format!(" kuro git · {repo} · {}{badge}", app.head.label())
+        }
+        View::Changes => format!(" kuro git · {repo} · {} · changes of the working tree ({})", app.head.label(), app.changes.len()),
         View::History => {
             let reading = if app.loading() { format!(" · reading… {} found so far", app.commits.len()) } else { String::new() };
             format!(" kuro git · {repo} · {} · {scope}{reading}", app.head.label())
@@ -187,6 +196,7 @@ pub fn render(app: &mut GitApp, buf: &mut Buffer, area: Rect) {
             draw_files(app, buf, l.list);
         }
         View::Diff => draw_diff(app, buf, l.list),
+        View::Changes => draw_changes(app, buf, l.list),
     }
     if let Some(r) = l.vbar
         && let Some(b) = scrollbar::bar(r.height as usize, list_len(app), l.list.height as usize, offset_of(app))
@@ -202,6 +212,9 @@ pub fn render(app: &mut GitApp, buf: &mut Buffer, area: Rect) {
     let fy = area.bottom() - 1;
     let text = if app.msg.is_empty() { hints(app).to_string() } else { app.msg.clone() };
     put(buf, Rect::new(area.x, fy, area.width, 1), fy, &format!(" {text}"), if app.msg.is_empty() { dim() } else { bold() });
+    if app.confirm.is_some() {
+        draw_confirm(app, buf, area);
+    }
 }
 
 fn offset_of(app: &GitApp) -> usize {
@@ -210,6 +223,7 @@ fn offset_of(app: &GitApp) -> usize {
         View::History => app.history.top,
         View::Commit => app.files_scroll.top,
         View::Diff => app.diff_top,
+        View::Changes => app.changes_scroll.top,
     }
 }
 
@@ -271,6 +285,78 @@ fn draw_files(app: &GitApp, buf: &mut Buffer, r: Rect) {
         let ch: &Change = &d.changes[i];
         (format!(" {}", ch.label()), status_style(app, ch.status))
     });
+}
+
+fn draw_changes(app: &GitApp, buf: &mut Buffer, r: Rect) {
+    if app.changes.is_empty() {
+        return empty_note(buf, r, "no changes: the working tree is clean");
+    }
+    draw_rows(buf, r, app.changes_scroll.top, app.changes_scroll.sel, app.changes.len(), |i| {
+        let c = &app.changes[i];
+        let style = match c.letter() {
+            'A' | 'U' => slot_style(app.cfg.colors.diff_add),
+            'D' => slot_style(app.cfg.colors.diff_del),
+            '!' => bold(),
+            _ => slot_style(app.cfg.colors.diff_hunk),
+        };
+        (format!(" {}", c.label()), style)
+    });
+}
+
+/// The question before changes are thrown away: bold and dim only, no colour, never a background.
+fn draw_confirm(app: &GitApp, buf: &mut Buffer, area: Rect) {
+    use ratatui::widgets::{Block, BorderType, Clear, Widget};
+    let Some(c) = &app.confirm else { return };
+    let (list, title, foot) = if c.stage == 1 {
+        let n = c.tracked.len();
+        (
+            &c.tracked,
+            if n == 1 {
+                format!(" Discard the changes of {}? ", c.tracked[0].path)
+            } else {
+                format!(" Discard the changes of {n} files? ")
+            },
+            "[y] discard   [n] cancel      this cannot be undone",
+        )
+    } else {
+        let n = c.untracked.len();
+        (
+            &c.untracked,
+            if n == 1 {
+                format!(" Delete the untracked file {}? ", c.untracked[0].path)
+            } else {
+                format!(" Also delete {n} untracked files? ")
+            },
+            if c.all && !c.tracked.is_empty() {
+                "[y] delete them   [n] keep them      this cannot be undone"
+            } else {
+                "[y] delete   [n] cancel      this cannot be undone"
+            },
+        )
+    };
+    let max_rows = (area.height as usize).saturating_sub(8).clamp(1, 12);
+    let width = (area.width.saturating_sub(4) as usize).clamp(24, 100) as u16;
+    let shown = list.len().min(max_rows);
+    let height = (shown + 4 + (list.len() > shown) as usize) as u16;
+    let rect = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 3,
+        width.min(area.width),
+        height.min(area.height),
+    );
+    Clear.render(rect, buf);
+    Block::bordered().border_type(BorderType::Rounded).title(title).render(rect, buf);
+    let inner = rect.width.saturating_sub(4) as usize;
+    let mut y = rect.y + 1;
+    for ch in list.iter().take(shown) {
+        buf.set_stringn(rect.x + 2, y, fit(&ch.label(), inner), inner, Style::default());
+        y += 1;
+    }
+    if list.len() > shown {
+        buf.set_stringn(rect.x + 2, y, format!("… and {} more", list.len() - shown), inner, dim());
+        y += 1;
+    }
+    buf.set_stringn(rect.x + 2, y + 1, fit(foot, inner), inner, bold());
 }
 
 fn draw_diff(app: &GitApp, buf: &mut Buffer, r: Rect) {

@@ -28,7 +28,7 @@
 |                                                                                                    |
 |                                                                                                    |
 |                                                                                                    |
-| ↑↓ move  Enter commit  d diff  Tab tree  Esc back  q quit                                          |
+| ↑↓ move  Enter commit  d diff  c changes  Tab tree  Esc back  q quit                               |
 == style ==
 |BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
 |RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR|

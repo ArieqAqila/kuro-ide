@@ -861,3 +861,267 @@ mod looks {
         }
     }
 }
+
+mod changes {
+    use super::*;
+
+    fn repo() -> Repo {
+        let mut r = Repo::new();
+        r.write("a.txt", "one\ntwo\nthree\n");
+        r.write("b.txt", "bee\n");
+        r.write("dir/c.txt", "sea\n");
+        r.commit("base");
+        r
+    }
+
+    fn open_changes(r: &Repo) -> GitApp {
+        let mut a = app(r, None);
+        press(&mut a, "c");
+        a
+    }
+
+    #[test]
+    fn the_tree_shows_how_many_files_changed_and_c_opens_them_with_vs_code_letters() {
+        let r = repo();
+        let mut a = app(&r, None);
+        assert!(!screen(&mut a).contains("(c)"), "a clean tree has no badge");
+        r.write("a.txt", "one\nTWO\nthree\n");
+        std::fs::remove_file(r.path().join("b.txt")).unwrap();
+        r.write("new.txt", "n\n");
+        r.write("staged.txt", "s\n");
+        r.git(&["add", "staged.txt"]);
+        let mut a = app(&r, None);
+        assert!(screen(&mut a).contains("4 changes (c)"), "{}", screen(&mut a));
+        press(&mut a, "c");
+        assert_eq!(a.view, View::Changes);
+        let s = screen(&mut a);
+        for line in ["M  a.txt", "D  b.txt", "U  new.txt", "A  staged.txt"] {
+            assert!(s.contains(line), "{line}:\n{s}");
+        }
+        assert!(s.contains("changes of the working tree (4)"));
+        press(&mut a, "Esc");
+        assert_eq!(a.view, View::Tree);
+    }
+
+    #[test]
+    fn a_clean_working_tree_says_so() {
+        let r = repo();
+        let mut a = open_changes(&r);
+        assert!(screen(&mut a).contains("no changes: the working tree is clean"));
+        press(&mut a, "x X");
+        assert!(a.confirm.is_none());
+    }
+
+    #[test]
+    fn enter_shows_the_diff_with_the_changed_words_marked_and_n_p_step_through_the_files() {
+        let mut r = repo();
+        r.write("a.txt", "name = 20260710\n");
+        r.commit("a number");
+        r.write("a.txt", "name = 20260721\n");
+        r.write("new.txt", "fresh\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "Enter");
+        assert_eq!(a.view, View::Diff);
+        let s = screen(&mut a);
+        assert!(s.contains("a.txt  (working tree against HEAD)"), "{s}");
+        assert!(s.contains("-name = 20260710") && s.contains("+name = 20260721"), "{s}");
+        assert!(!a.diff_marks.iter().all(|m| m.is_empty()), "the words that differ are marked inside the line");
+        press(&mut a, "n");
+        let s = screen(&mut a);
+        assert!(s.contains("new.txt") && s.contains("+fresh") && s.contains("new file mode"), "{s}");
+        press(&mut a, "n");
+        assert!(screen(&mut a).contains("this is the last changed file"));
+        press(&mut a, "p");
+        assert!(screen(&mut a).contains("a.txt  (working tree against HEAD)"));
+        press(&mut a, "Esc");
+        assert_eq!(a.view, View::Changes);
+    }
+
+    #[test]
+    fn x_asks_first_n_and_esc_change_nothing_and_y_restores_the_file() {
+        let r = repo();
+        r.write("a.txt", "CHANGED\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "x");
+        let s = screen(&mut a);
+        assert!(s.contains("Discard the changes of a.txt?") && s.contains("this cannot be undone"), "{s}");
+        press(&mut a, "n");
+        assert!(a.confirm.is_none());
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "CHANGED\n");
+        press(&mut a, "x Esc");
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "CHANGED\n");
+        press(&mut a, "x");
+        // while the question is open other keys and the mouse do nothing
+        press(&mut a, "j q a");
+        assert!(a.confirm.is_some() && !a.quit);
+        press(&mut a, "y");
+        assert!(a.confirm.is_none());
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "one\ntwo\nthree\n");
+        assert!(screen(&mut a).contains("no changes"));
+    }
+
+    #[test]
+    fn an_untracked_file_is_deleted_only_after_its_own_question() {
+        let r = repo();
+        r.write("scratch.txt", "x\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "x");
+        assert!(screen(&mut a).contains("Delete the untracked file scratch.txt?"));
+        press(&mut a, "n");
+        assert!(r.path().join("scratch.txt").exists());
+        press(&mut a, "x y");
+        assert!(!r.path().join("scratch.txt").exists());
+    }
+
+    #[test]
+    fn x_capital_asks_about_the_tracked_files_and_then_separately_about_the_untracked_ones() {
+        let r = repo();
+        r.write("a.txt", "CHANGED\n");
+        std::fs::remove_file(r.path().join("b.txt")).unwrap();
+        r.write("u1.txt", "1\n");
+        r.write("u2.txt", "2\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "X");
+        let s = screen(&mut a);
+        assert!(s.contains("Discard the changes of 2 files?") && s.contains("M  a.txt") && s.contains("D  b.txt"), "{s}");
+        press(&mut a, "y");
+        // the tracked files are back, the untracked ones are asked about on their own
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "one\ntwo\nthree\n");
+        assert!(r.path().join("b.txt").exists());
+        let s = screen(&mut a);
+        assert!(s.contains("Also delete 2 untracked files?") && s.contains("U  u1.txt") && s.contains("U  u2.txt"), "{s}");
+        press(&mut a, "n");
+        assert!(r.path().join("u1.txt").exists() && r.path().join("u2.txt").exists(), "kept");
+        assert!(screen(&mut a).contains("untracked files kept"));
+        // again, and this time delete them
+        press(&mut a, "X");
+        assert!(screen(&mut a).contains("Also delete 2 untracked files?"), "only untracked files are left: straight to their question");
+        press(&mut a, "y");
+        assert!(!r.path().join("u1.txt").exists() && !r.path().join("u2.txt").exists());
+    }
+
+    #[test]
+    fn n_at_the_first_question_of_discard_all_cancels_everything() {
+        let r = repo();
+        r.write("a.txt", "CHANGED\n");
+        r.write("u.txt", "u\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "X n");
+        assert!(a.confirm.is_none());
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "CHANGED\n");
+        assert!(r.path().join("u.txt").exists());
+    }
+
+    #[test]
+    fn a_merge_conflict_is_never_discarded() {
+        let mut r = repo();
+        r.git(&["checkout", "-q", "-b", "side"]);
+        r.write("a.txt", "side\n");
+        r.commit("side");
+        r.git(&["checkout", "-q", "main"]);
+        r.write("a.txt", "main\n");
+        r.commit("main");
+        let m =
+            std::process::Command::new("git").current_dir(r.path()).args(["merge", "side"]).envs(isolated_env(r.path())).output().unwrap();
+        assert!(!m.status.success());
+        let mut a = open_changes(&r);
+        assert!(screen(&mut a).contains("!  a.txt"));
+        press(&mut a, "x");
+        assert!(a.confirm.is_none());
+        assert!(screen(&mut a).contains("merge conflict"), "{}", screen(&mut a));
+        press(&mut a, "X");
+        assert!(a.confirm.is_none(), "nothing else to discard: the conflict is skipped");
+        assert!(std::fs::read_to_string(r.path().join("a.txt")).unwrap().contains("<<<<<<<"));
+    }
+
+    #[test]
+    fn the_list_notices_changes_made_outside_while_it_is_open() {
+        let r = repo();
+        let mut a = open_changes(&r);
+        a.poll_interval = std::time::Duration::from_millis(10);
+        assert!(screen(&mut a).contains("no changes"));
+        r.write("b.txt", "edited elsewhere\n");
+        let start = std::time::Instant::now();
+        while a.changes.is_empty() && start.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+            a.tick();
+        }
+        assert!(screen(&mut a).contains("M  b.txt"), "{}", screen(&mut a));
+        // and it goes away when it is undone from outside
+        r.git(&["checkout", "--", "b.txt"]);
+        let start = std::time::Instant::now();
+        while !a.changes.is_empty() && start.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+            a.tick();
+        }
+        assert!(a.changes.is_empty());
+    }
+
+    #[test]
+    fn an_open_diff_follows_the_file_and_leaves_when_the_file_is_not_changed_any_more() {
+        let r = repo();
+        r.write("a.txt", "one\nTWO\nthree\n");
+        let mut a = open_changes(&r);
+        a.poll_interval = std::time::Duration::from_millis(10);
+        press(&mut a, "Enter");
+        assert!(screen(&mut a).contains("+TWO"));
+        r.write("a.txt", "one\nTWO\nTHREE\n");
+        let start = std::time::Instant::now();
+        while !screen(&mut a).contains("+THREE") && start.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+            a.tick();
+        }
+        assert!(screen(&mut a).contains("+THREE"));
+        r.git(&["checkout", "--", "a.txt"]);
+        let start = std::time::Instant::now();
+        while a.view == View::Diff && start.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+            a.tick();
+        }
+        assert_eq!(a.view, View::Changes);
+        assert!(screen(&mut a).contains("not changed any more"));
+    }
+
+    #[test]
+    fn x_in_the_diff_discards_that_file_and_returns_to_the_list() {
+        let r = repo();
+        r.write("a.txt", "CHANGED\n");
+        r.write("b.txt", "CHANGED TOO\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "Enter x");
+        assert!(screen(&mut a).contains("Discard the changes of a.txt?"));
+        press(&mut a, "y");
+        assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "one\ntwo\nthree\n");
+        assert_eq!(std::fs::read_to_string(r.path().join("b.txt")).unwrap(), "CHANGED TOO\n", "the other file is untouched");
+        assert_eq!(a.view, View::Changes);
+        assert_eq!(a.changes.len(), 1);
+    }
+
+    #[test]
+    fn the_question_uses_no_background_and_only_default_colours() {
+        let r = repo();
+        r.write("a.txt", "CHANGED\n");
+        let mut a = open_changes(&r);
+        press(&mut a, "x");
+        let buf = draw(&mut a);
+        for y in 0..H {
+            for x in 0..W {
+                let c = &buf[(x, y)];
+                assert_eq!(c.bg, ratatui::style::Color::Reset, "{x},{y}");
+                assert!(!matches!(c.fg, ratatui::style::Color::Rgb(..) | ratatui::style::Color::Indexed(_)), "{x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_repository_without_commits_lists_its_files_as_new() {
+        let empty = Repo::new();
+        empty.write("first.txt", "1\n");
+        let mut a = GitApp::new(empty.open(), Config::default(), None).unwrap();
+        press(&mut a, "c");
+        assert_eq!(a.view, View::Changes);
+        assert!(screen(&mut a).contains("U  first.txt"));
+        press(&mut a, "Enter");
+        assert!(screen(&mut a).contains("+1"));
+    }
+}

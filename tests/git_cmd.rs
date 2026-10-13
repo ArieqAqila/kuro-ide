@@ -427,3 +427,148 @@ fn a_second_build_is_not_started_while_one_runs_and_a_fresh_cache_is_left_alone(
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert_eq!(std::fs::metadata(dir.join("info/commit-graph")).unwrap().modified().unwrap(), built);
 }
+
+// ----------------------------------------------------------------------------------------------- the working tree: status and discard
+
+fn paths(g: &kuro::gitview::cmd::Git) -> Vec<String> {
+    g.status().unwrap().into_iter().map(|c| format!("{} {}", c.letter(), c.path)).collect()
+}
+
+fn base_repo() -> Repo {
+    let mut r = Repo::new();
+    r.write("a.txt", "one\ntwo\nthree\n");
+    r.write("keep.txt", "keep\n");
+    r.write("dir/b.txt", "bee\n");
+    r.commit("base");
+    r
+}
+
+#[test]
+fn status_lists_modified_deleted_added_and_untracked_files_staged_or_not() {
+    let r = base_repo();
+    r.write("a.txt", "one\nTWO\nthree\n"); // not staged
+    r.write("dir/b.txt", "bee!\n");
+    r.git(&["add", "dir/b.txt"]); // staged
+    std::fs::remove_file(r.path().join("keep.txt")).unwrap();
+    r.write("new file.txt", "x\n"); // untracked, with a space
+    r.write("added.txt", "y\n");
+    r.git(&["add", "added.txt"]);
+    r.write("ignored.log", "z\n");
+    r.write(".gitignore", "*.log\n");
+    let g = r.open();
+    assert_eq!(
+        paths(&g),
+        [".gitignore", "a.txt", "added.txt", "dir/b.txt", "keep.txt", "new file.txt"].map(|p| {
+            let letter = match p {
+                ".gitignore" | "new file.txt" => 'U',
+                "added.txt" => 'A',
+                "keep.txt" => 'D',
+                _ => 'M',
+            };
+            format!("{letter} {p}")
+        })
+    );
+}
+
+#[test]
+fn a_clean_repository_and_one_without_commits_are_handled() {
+    let r = base_repo();
+    assert!(r.open().status().unwrap().is_empty());
+    let empty = Repo::new();
+    empty.write("first.txt", "1\n");
+    assert_eq!(paths(&empty.open()), ["U first.txt"]);
+}
+
+#[test]
+fn the_diff_of_a_change_is_against_head_and_a_new_file_is_shown_as_all_added() {
+    let r = base_repo();
+    r.write("a.txt", "one\nTWO\nthree\n");
+    r.git(&["add", "a.txt"]);
+    r.write("a.txt", "one\nTWO\nTHREE\n"); // staged and then changed again: the diff is HEAD against the working tree
+    r.write("fresh.txt", "line1\nline2");
+    r.write("bin.dat", "a\0b");
+    let g = r.open();
+    let ch = g.status().unwrap();
+    let get = |p: &str| ch.iter().find(|c| c.path == p).unwrap().clone();
+    let d = g.worktree_diff(&get("a.txt")).unwrap();
+    assert!(d.contains("-two") && d.contains("+TWO") && d.contains("-three") && d.contains("+THREE"), "{d}");
+    let d = g.worktree_diff(&get("fresh.txt")).unwrap();
+    assert!(
+        d.contains("new file mode")
+            && d.contains("@@ -0,0 +1,2 @@")
+            && d.contains("+line1\n+line2\n")
+            && d.contains("No newline at end of file"),
+        "{d}"
+    );
+    assert!(g.worktree_diff(&get("bin.dat")).unwrap().contains("Binary files"));
+}
+
+#[test]
+fn discard_restores_tracked_files_and_removes_added_and_untracked_ones_and_nothing_else() {
+    let r = base_repo();
+    r.write("a.txt", "CHANGED\n");
+    r.write("dir/b.txt", "staged change\n");
+    r.git(&["add", "dir/b.txt"]);
+    std::fs::remove_file(r.path().join("keep.txt")).unwrap();
+    r.write("added.txt", "y\n");
+    r.git(&["add", "added.txt"]);
+    r.write("untracked.txt", "u\n");
+    r.write("other/untracked2.txt", "u2\n");
+    let g = r.open();
+    let all = g.status().unwrap();
+    assert_eq!(all.len(), 6);
+    // only some are discarded: the others stay exactly as they are
+    let some: Vec<_> = all.iter().filter(|c| ["a.txt", "added.txt", "untracked.txt"].contains(&c.path.as_str())).cloned().collect();
+    assert_eq!(g.discard(&some).unwrap(), 3);
+    assert_eq!(std::fs::read_to_string(r.path().join("a.txt")).unwrap(), "one\ntwo\nthree\n");
+    assert!(!r.path().join("added.txt").exists() && !r.path().join("untracked.txt").exists());
+    assert_eq!(r.git(&["ls-files", "added.txt"]), "", "removed from the index too");
+    assert_eq!(std::fs::read_to_string(r.path().join("dir/b.txt")).unwrap(), "staged change\n", "not chosen: untouched");
+    assert!(r.path().join("other/untracked2.txt").exists());
+    assert!(!r.path().join("keep.txt").exists());
+    // the rest
+    let rest = g.status().unwrap();
+    assert_eq!(rest.len(), 3);
+    assert_eq!(g.discard(&rest).unwrap(), 3);
+    assert!(g.status().unwrap().is_empty(), "everything is gone: {:?}", g.status().unwrap());
+    assert_eq!(std::fs::read_to_string(r.path().join("dir/b.txt")).unwrap(), "bee\n");
+    assert_eq!(std::fs::read_to_string(r.path().join("keep.txt")).unwrap(), "keep\n", "the deleted file is back");
+    assert!(!r.path().join("other/untracked2.txt").exists());
+    assert_eq!(r.git(&["log", "--format=%s"]).trim(), "base", "history untouched");
+}
+
+#[test]
+fn discard_is_safe_with_odd_names_and_never_touches_conflicts_or_ignored_files() {
+    let mut r = base_repo();
+    r.write("-rf", "dash\n");
+    r.write("sp ace/caf\u{e9} \u{540d}.txt", "x\n");
+    r.write("ignored.log", "keep me\n");
+    r.write(".gitignore", "*.log\n");
+    r.commit("ignore");
+    r.write("-rf", "changed\n");
+    r.write("-new", "n\n");
+    r.write("sp ace/caf\u{e9} \u{540d}.txt", "changed\n");
+    let g = r.open();
+    let all = g.status().unwrap();
+    assert_eq!(all.len(), 3);
+    g.discard(&all).unwrap();
+    assert_eq!(std::fs::read_to_string(r.path().join("-rf")).unwrap(), "dash\n");
+    assert!(!r.path().join("-new").exists());
+    assert_eq!(std::fs::read_to_string(r.path().join("sp ace/caf\u{e9} \u{540d}.txt")).unwrap(), "x\n");
+    assert_eq!(std::fs::read_to_string(r.path().join("ignored.log")).unwrap(), "keep me\n", "ignored files are not part of it");
+    // a conflict is reported and left alone
+    r.git(&["checkout", "-q", "-b", "other"]);
+    r.write("a.txt", "other side\n");
+    r.commit("other");
+    r.git(&["checkout", "-q", "main"]);
+    r.write("a.txt", "main side\n");
+    r.commit("main");
+    let merge =
+        std::process::Command::new("git").current_dir(r.path()).args(["merge", "other"]).envs(isolated_env(r.path())).output().unwrap();
+    assert!(!merge.status.success());
+    let ch = g.status().unwrap();
+    let conflict = ch.iter().find(|c| c.path == "a.txt").unwrap();
+    assert_eq!(conflict.kind(), kuro::gitview::cmd::WtKind::Conflict);
+    assert_eq!(g.discard(&ch).unwrap(), 0, "nothing was discarded: a conflict is left to the user");
+    assert!(std::fs::read_to_string(r.path().join("a.txt")).unwrap().contains("<<<<<<<"));
+}

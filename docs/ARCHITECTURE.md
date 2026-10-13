@@ -39,7 +39,7 @@ makes reports to it (`write_observed` for saves, `ObservedFs` for the sync leade
 
 ## `kuro git`
 
-`src/gitview/`: `cmd` is the only code that starts `git` (read-only commands, parsers for its machine-readable output), `mod` is the model (four
+`src/gitview/`: `cmd` is the only code that starts `git` (parsers for its machine-readable output; read-only commands except the confirmed discards of the changes view), `mod` is the model (five
 views, keys, mouse, scrollbars), `ui` draws. `src/screen.rs` is the small trait the terminal loop in `main.rs` runs, implemented by the editor and by
 `GitApp`; the file view is the normal editor (`App`) with `view_only` set. See [GIT.md](GIT.md).
 

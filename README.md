@@ -62,7 +62,7 @@ See [docs/HARD-UNDO.md](docs/HARD-UNDO.md).
 ### Git history
 
 `kuro git` browses the history of the repository you are in (tree, file history with renames, commits, diffs; `o` opens a file as it was at a
-commit, read-only). `kuro git -fl FILE` opens one file's history. See [docs/GIT.md](docs/GIT.md).
+commit, read-only; `c` lists the uncommitted changes like VS Code's Source Control, and `x` / `X` discard them after asking). `kuro git -fl FILE` opens one file's history. See [docs/GIT.md](docs/GIT.md).
 
 ### Extensions
 

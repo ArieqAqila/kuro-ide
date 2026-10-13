@@ -1,8 +1,9 @@
-//! `kuro git`: a read-only browser for a repository's history. See docs/GIT.md.
+//! `kuro git`: a browser for a repository's history and its working-tree changes. See docs/GIT.md.
 //!
-//! One full-screen program with four views: the file **tree**, a **history** of commits (of the repository, or of one file with renames
-//! followed), one **commit** with its changed files, and a **diff**. A file at a commit opens in the normal editor, read-only. All git calls
-//! are in [`cmd`] and are read-only.
+//! One full-screen program with five views: the file **tree**, a **history** of commits (of the repository, or of one file with renames
+//! followed), one **commit** with its changed files, a **diff**, and the **changes** of the working tree (what VS Code's Source Control shows).
+//! A file at a commit opens in the normal editor, read-only. All git calls are in [`cmd`]; the only ones that change anything are the
+//! discards of the changes view, which always ask first.
 
 pub mod cmd;
 mod inline;
@@ -11,7 +12,7 @@ mod ui;
 use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::scrollbar::{self, Part};
-use cmd::{Change, Commit, Git, GitError, Head};
+use cmd::{Change, Commit, Git, GitError, Head, WtChange, WtKind};
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -28,6 +29,13 @@ pub const KEYS: &[(&str, &str, &str)] = &[
     ("Lists", "Home End g G", "First / last row"),
     ("Tree", "Enter →", "Open a folder (or fold it); on a file: show that file's history"),
     ("Tree", "a Tab", "History of the whole repository"),
+    ("Tree", "c", "The changes of the working tree (also from the history)"),
+    ("Changes", "Enter → d", "Diff of the selected file against HEAD"),
+    ("Changes", "x Delete", "Discard the changes of the selected file (asks first)"),
+    ("Changes", "X", "Discard all changes (asks first; untracked files get a question of their own)"),
+    ("Changes", "r", "Look again (the list also updates by itself)"),
+    ("Diff of a change", "x", "Discard the changes of this file (asks first)"),
+    ("Diff of a change", "n p", "Next / previous changed file"),
     ("History", "Enter →", "Open the selected commit"),
     ("History", "d", "Show its diff (of the followed file in a file history)"),
     ("History", "Tab t", "Back to the tree"),
@@ -57,6 +65,8 @@ pub enum View {
     History,
     Commit,
     Diff,
+    /// The changes of the working tree (what `git status` shows), like VS Code's Source Control.
+    Changes,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -95,6 +105,23 @@ struct BarDrag {
 pub struct Scroll {
     pub sel: usize,
     pub top: usize,
+}
+
+/// The entries of `list` that are still changed (the working tree is looked at again before anything is thrown away).
+fn still(now: &[WtChange], list: &[WtChange]) -> Vec<WtChange> {
+    list.iter().filter(|w| now.contains(w)).cloned().collect()
+}
+
+/// A question before changes are thrown away.
+#[derive(Clone, Debug)]
+pub struct Confirm {
+    /// Tracked changes to restore or remove (asked at stage 1).
+    pub tracked: Vec<WtChange>,
+    /// Untracked files to delete (asked at stage 2, a question of their own).
+    pub untracked: Vec<WtChange>,
+    pub stage: u8,
+    /// Asked for everything (`X`): after the tracked files the untracked ones are asked about.
+    pub all: bool,
 }
 
 pub struct GitApp {
@@ -138,6 +165,16 @@ pub struct GitApp {
     /// The history of a file that git is still reading in the background (it can take many seconds on a large repository):
     /// commits are added to the list as they arrive. Dropping it stops git.
     loader: Option<cmd::FileLog>,
+    /// The working tree's changes (see `refresh_changes`), when they were last looked at, and how long that took.
+    pub changes: Vec<WtChange>,
+    pub changes_scroll: Scroll,
+    status_at: Option<std::time::Instant>,
+    status_cost: std::time::Duration,
+    /// The diff on screen is the working-tree diff of this path.
+    pub wt_diff: Option<String>,
+    pub confirm: Option<Confirm>,
+    /// How often the changes view looks at the working tree again (the tree view: three times as seldom).
+    pub poll_interval: std::time::Duration,
 }
 
 /// `$XDG_CACHE_HOME/kuro/git` (`~/.cache/kuro/git`).
@@ -198,8 +235,16 @@ impl GitApp {
             ext_langs: vec![],
             palette: None,
             loader: None,
+            changes: vec![],
+            changes_scroll: Scroll::default(),
+            status_at: None,
+            status_cost: std::time::Duration::ZERO,
+            wt_diff: None,
+            confirm: None,
+            poll_interval: std::time::Duration::from_millis(1500),
         };
         app.rebuild_tree();
+        let _ = app.refresh_changes();
         match file {
             Some(f) => {
                 // a file that is not in the current tree may have been deleted: finding out takes a walk of the history, so it is checked
@@ -315,7 +360,7 @@ impl GitApp {
         if self.view == View::Tree && self.loader.is_some() {
             self.loader = None;
         }
-        let mut changed = false;
+        let mut changed = self.poll_changes();
         let mut finished: Option<Result<(), String>> = None;
         if let Some(l) = &self.loader {
             while let Ok(batch) = l.rx.try_recv() {
@@ -374,6 +419,194 @@ impl GitApp {
         self.back = vec![View::Tree];
     }
 
+    // ---------------------------------------------------------------------------- working-tree changes
+
+    /// Look at the working tree again. Returns true when the list is different from before. The selection stays on the same path.
+    pub fn refresh_changes(&mut self) -> Result<bool, GitError> {
+        let start = std::time::Instant::now();
+        let now = self.git.status()?;
+        self.status_cost = start.elapsed();
+        self.status_at = Some(std::time::Instant::now());
+        if now == self.changes {
+            return Ok(false);
+        }
+        let keep = self.changes.get(self.changes_scroll.sel).map(|c| c.path.clone());
+        self.changes = now;
+        let sel = keep.and_then(|p| self.changes.iter().position(|c| c.path == p)).unwrap_or(self.changes_scroll.sel);
+        self.changes_scroll.sel = sel.min(self.changes.len().saturating_sub(1));
+        let (len, h) = (self.changes.len(), self.list_height());
+        self.changes_scroll.top = self.changes_scroll.top.min(len.saturating_sub(h));
+        Ok(true)
+    }
+
+    /// Look again every now and then while the changes (or the tree with its count) are on screen: VS Code watches the files, kuro asks
+    /// git, at a pace that stays well under a tenth of the time even when `git status` is slow in a huge repository.
+    fn poll_changes(&mut self) -> bool {
+        if self.confirm.is_some() || self.viewer.is_some() {
+            return false;
+        }
+        let wanted = match self.view {
+            View::Changes => self.poll_interval,
+            View::Tree => self.poll_interval * 3,
+            View::Diff if self.wt_diff.is_some() => self.poll_interval,
+            _ => return false,
+        };
+        let wait = wanted.max(self.status_cost * 10);
+        if self.status_at.is_some_and(|t| t.elapsed() < wait) {
+            return false;
+        }
+        let changed = self.refresh_changes().unwrap_or(false);
+        if self.view == View::Diff && self.wt_diff.is_some() {
+            // the status letters may be the same while the file changed again: compare the diff itself
+            let before = self.diff.clone();
+            self.reload_wt_diff();
+            return changed || self.diff != before || self.view != View::Diff;
+        }
+        changed
+    }
+
+    fn show_changes(&mut self) {
+        if let Err(e) = self.refresh_changes() {
+            return self.msg = e.to_string();
+        }
+        if self.view != View::Changes {
+            self.back.push(self.view);
+        }
+        self.view = View::Changes;
+        self.msg.clear();
+    }
+
+    /// The diff of working-tree change number `i` against HEAD.
+    fn show_wt_diff(&mut self, i: usize) {
+        let Some(c) = self.changes.get(i).cloned() else { return };
+        match self.git.worktree_diff(&c) {
+            Ok(text) => {
+                self.diff = text_lines(&text);
+                if self.diff.is_empty() {
+                    self.diff = vec!["(no textual changes)".into()];
+                }
+                self.diff_marks = inline::marks(&self.diff);
+                self.diff_title = format!("{}  (working tree against HEAD)", c.path);
+                self.diff_file = None;
+                self.diff_top = 0;
+                self.diff_left = 0;
+                self.wt_diff = Some(c.path.clone());
+                self.changes_scroll.sel = i;
+                if self.view != View::Diff {
+                    self.back.push(self.view);
+                }
+                self.view = View::Diff;
+            }
+            Err(e) => self.msg = e.to_string(),
+        }
+    }
+
+    /// The change under the diff was updated (the file changed again, or it is no longer changed).
+    fn reload_wt_diff(&mut self) {
+        let Some(path) = self.wt_diff.clone() else { return };
+        match self.changes.iter().position(|c| c.path == path) {
+            Some(i) => {
+                let (top, left) = (self.diff_top, self.diff_left);
+                self.show_wt_diff(i);
+                self.diff_top = top.min(self.diff.len().saturating_sub(1));
+                self.diff_left = left;
+            }
+            None => {
+                self.msg = format!("{path} is not changed any more");
+                self.wt_diff = None;
+                self.view = View::Changes;
+                self.back.clear();
+                self.back.push(View::Tree);
+            }
+        }
+    }
+
+    /// Next (`+1`) or previous (`-1`) changed file, staying in the diff.
+    fn step_change(&mut self, delta: isize) {
+        let next = self.changes_scroll.sel as isize + delta;
+        if next < 0 || next as usize >= self.changes.len() {
+            return self.msg = if delta > 0 { "this is the last changed file".into() } else { "this is the first changed file".into() };
+        }
+        self.show_wt_diff(next as usize);
+    }
+
+    /// Ask before discarding the changes of one file.
+    fn ask_discard_one(&mut self, i: usize) {
+        let Some(c) = self.changes.get(i).cloned() else { return };
+        match c.kind() {
+            WtKind::Conflict => self.msg = format!("{} is a merge conflict: resolve it with git, kuro leaves it alone", c.path),
+            WtKind::Untracked => self.confirm = Some(Confirm { tracked: vec![], untracked: vec![c], stage: 2, all: false }),
+            _ => self.confirm = Some(Confirm { tracked: vec![c], untracked: vec![], stage: 1, all: false }),
+        }
+    }
+
+    /// Ask before discarding everything.
+    fn ask_discard_all(&mut self) {
+        let tracked: Vec<WtChange> =
+            self.changes.iter().filter(|c| matches!(c.kind(), WtKind::Modified | WtKind::Deleted | WtKind::New)).cloned().collect();
+        let untracked: Vec<WtChange> = self.changes.iter().filter(|c| c.kind() == WtKind::Untracked).cloned().collect();
+        if tracked.is_empty() && untracked.is_empty() {
+            return self.msg = "nothing to discard".into();
+        }
+        let stage = if tracked.is_empty() { 2 } else { 1 };
+        self.confirm = Some(Confirm { tracked, untracked, stage, all: true });
+    }
+
+    fn confirm_key(&mut self, k: KeyEvent) {
+        let Some(c) = self.confirm.clone() else { return };
+        let yes = matches!(k.code, KeyCode::Char('y') | KeyCode::Char('Y'));
+        let no = matches!(k.code, KeyCode::Char('n') | KeyCode::Char('N'));
+        let esc = matches!(k.code, KeyCode::Esc);
+        if !(yes || no || esc) {
+            return;
+        }
+        // everything is looked at again now: only what is still changed, and was shown in the question, is discarded
+        let _ = self.refresh_changes();
+        match (c.stage, yes) {
+            (1, true) => {
+                let done = self.git.discard(&still(&self.changes, &c.tracked));
+                let _ = self.refresh_changes();
+                match done {
+                    Err(e) => {
+                        self.confirm = None;
+                        return self.msg = format!("discard failed: {e}");
+                    }
+                    Ok(n) => self.msg = format!("discarded the changes of {n} file{}", if n == 1 { "" } else { "s" }),
+                }
+                if c.all && !c.untracked.is_empty() {
+                    self.confirm = Some(Confirm { tracked: vec![], untracked: still(&self.changes, &c.untracked), stage: 2, all: true });
+                    if self.confirm.as_ref().is_some_and(|x| x.untracked.is_empty()) {
+                        self.confirm = None;
+                    }
+                } else {
+                    self.confirm = None;
+                }
+            }
+            (2, true) => {
+                let list = still(&self.changes, &c.untracked);
+                self.confirm = None;
+                match self.git.discard(&list) {
+                    Ok(n) => self.msg = format!("deleted {n} untracked file{}", if n == 1 { "" } else { "s" }),
+                    Err(e) => self.msg = format!("delete failed: {e}"),
+                }
+                let _ = self.refresh_changes();
+            }
+            (2, false) if no && c.all => {
+                self.confirm = None;
+                self.msg = "untracked files kept".into();
+            }
+            _ => {
+                self.confirm = None;
+                self.msg = "cancelled: nothing was changed".into();
+            }
+        }
+        // the diff or the list that was open may be about a file that is gone now
+        if self.confirm.is_none() && self.view == View::Diff && self.wt_diff.is_some() {
+            self.reload_wt_diff();
+        }
+        self.changes_scroll.sel = self.changes_scroll.sel.min(self.changes.len().saturating_sub(1));
+    }
+
     // ---------------------------------------------------------------------------- commit and diff
 
     fn enter_commit(&mut self, idx: usize) {
@@ -420,6 +653,7 @@ impl GitApp {
                     None => format!("{}  {}", commit.short, commit.subject),
                 };
                 self.diff_file = file;
+                self.wt_diff = None;
                 self.diff_top = 0;
                 self.diff_left = 0;
                 if self.view != View::Diff {
@@ -529,6 +763,7 @@ impl GitApp {
             View::History => self.commits.len(),
             View::Commit => self.detail.as_ref().map_or(0, |d| d.changes.len()),
             View::Diff => self.diff.len(),
+            View::Changes => self.changes.len(),
         }
     }
 
@@ -540,6 +775,7 @@ impl GitApp {
         match self.view {
             View::Tree => &mut self.tree,
             View::History => &mut self.history,
+            View::Changes => &mut self.changes_scroll,
             _ => &mut self.files_scroll,
         }
     }
@@ -598,6 +834,7 @@ impl GitApp {
             }
             View::Commit => self.show_diff(false),
             View::Diff => {}
+            View::Changes => self.show_wt_diff(self.changes_scroll.sel),
         }
     }
 
@@ -622,6 +859,9 @@ impl GitApp {
                 self.viewer = None;
             }
             return;
+        }
+        if self.confirm.is_some() {
+            return self.confirm_key(k);
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let page = self.list_height().saturating_sub(1).max(1) as isize;
@@ -648,6 +888,24 @@ impl GitApp {
             KeyCode::Char('q') if !ctrl => self.quit = true,
             KeyCode::Char('q') | KeyCode::Char('Q') if ctrl => self.quit = true,
             KeyCode::Esc | KeyCode::Backspace => self.go_back(),
+            KeyCode::Char('c') if matches!(self.view, View::Tree | View::History) => self.show_changes(),
+            KeyCode::Char('r') if self.view == View::Changes => match self.refresh_changes() {
+                Ok(_) => self.msg = format!("{} changed file{}", self.changes.len(), if self.changes.len() == 1 { "" } else { "s" }),
+                Err(e) => self.msg = e.to_string(),
+            },
+            KeyCode::Char('x') | KeyCode::Delete if self.view == View::Changes => self.ask_discard_one(self.changes_scroll.sel),
+            KeyCode::Char('X') if self.view == View::Changes => self.ask_discard_all(),
+            KeyCode::Char('x') | KeyCode::Delete if self.view == View::Diff && self.wt_diff.is_some() => {
+                if let Some(i) = self.changes.iter().position(|c| Some(&c.path) == self.wt_diff.as_ref()) {
+                    self.ask_discard_one(i);
+                }
+            }
+            KeyCode::Char('n') if self.view == View::Diff && self.wt_diff.is_some() => self.step_change(1),
+            KeyCode::Char('p') if self.view == View::Diff && self.wt_diff.is_some() => self.step_change(-1),
+            KeyCode::Char('o') if self.view == View::Diff && self.wt_diff.is_some() => {
+                self.msg = "open the file in your editor: kuro git shows files as they were at a commit".into()
+            }
+            KeyCode::Char('d') if self.view == View::Changes => self.show_wt_diff(self.changes_scroll.sel),
             KeyCode::Char('o') if matches!(self.view, View::Commit | View::Diff) => self.open_file(),
             KeyCode::Char('n') if matches!(self.view, View::Commit | View::Diff) => self.step_commit(1),
             KeyCode::Char('p') if matches!(self.view, View::Commit | View::Diff) => self.step_commit(-1),
@@ -706,6 +964,9 @@ impl GitApp {
         if let Some(v) = &mut self.viewer {
             v.handle_mouse(m);
             return;
+        }
+        if self.confirm.is_some() {
+            return; // the question comes first
         }
         let area = self.area;
         let (x, y) = (m.column, m.row);
@@ -801,6 +1062,7 @@ impl GitApp {
             View::History => self.history.top,
             View::Commit => self.files_scroll.top,
             View::Diff => self.diff_top,
+            View::Changes => self.changes_scroll.top,
         }
     }
 

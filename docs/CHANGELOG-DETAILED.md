@@ -34,6 +34,14 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
   bar, the last row of a frame, was drawn. They now wait for the whole first frame.
 
 ### Added
+- `kuro git` has a fifth view, **Changes** (`c`), the equivalent of VS Code's Source Control: `git status` (staged and not staged together against HEAD, untracked files, no
+  ignored ones) as a list with `M`, `A`, `D`, `U` and `!` (conflict), a count in the tree header, a diff against HEAD for each (a new file as all added) with the inline marks and
+  `n` / `p` through the files. It looks again by itself (every 1.5 s while open, every 4.5 s in the tree, never faster than ten times the time `git status` took), also inside an
+  open diff, which follows the file. **Discarding**: `x` / `Delete` for one file, `X` for all, always behind a popup; untracked files are asked about separately (`y` deletes,
+  `n` keeps), a merge conflict is refused, and before anything is thrown away the status is read again so that only files still changed and listed are touched
+  (`git restore --source=HEAD --staged --worktree`, `git rm -f`, `git clean -f`, paths after `--`). Decisions (yours): changes view plus discard only, no staging or committing;
+  popup confirmation only (no backup copy); untracked files deleted only after their own question. Tests: `tests/git_cmd.rs` (status, diff, discard on odd names, conflicts,
+  ignored files, no commits), `tests/git_ui.rs` (`changes`), `tests/pty_git.rs` (an outside edit is noticed, `x`, `X`).
 - `kuro git` paging keys that every terminal passes on: `Space` / `b`, `Ctrl+F` / `Ctrl+B` (a page) and `Ctrl+D` / `Ctrl+U` (half a page), in the lists and in the diff. Found while looking at
   "scrolling does not work": a `foot.ini` with `scrollback-up-page=Page_Up` and `scrollback-down-page=Page_Down` makes foot swallow PageUp / PageDown. Documented in `docs/KEYBINDINGS.md`. Tests: `tests/git_ui.rs` (`paging_keys`).
 - `kuro --show-input` shows every key and mouse event as the terminal sent it (escaped bytes) and as kuro parsed it, until Ctrl+C. It is there for reports such as

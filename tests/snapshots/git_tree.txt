@@ -28,7 +28,7 @@
 |                                                                                                    |
 |                                                                                                    |
 |                                                                                                    |
-| ↑↓ move  Enter open  a all history  q quit                                                         |
+| ↑↓ move  Enter open  a all history  c changes  q quit                                              |
 == style ==
 |BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
 |RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR|

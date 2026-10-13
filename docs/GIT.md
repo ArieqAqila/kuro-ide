@@ -1,6 +1,6 @@
 # kuro git
 
-A read-only browser for the history of the git repository you are in.
+A browser for the history of the git repository you are in, and for its uncommitted changes, which it can discard (like VS Code's Source Control).
 
 ```fish
 kuro git                    # the file tree (with each file's history) and the history of the repository
@@ -21,6 +21,26 @@ kuro git -fl src/app.rs     # the commit history of one file, renames followed
    first parent (a merge shows what it brought in; the root commit is all additions).
 4. **Diff**: the unified diff of a commit or of one file in it, with the colours below, vertical and horizontal scrollbars, `n` / `p` to step through commits.
 
+5. **Changes** (`c`): what `git status` shows, like VS Code's Source Control: `M` modified, `A` added, `D` deleted, `U` untracked, `!` merge conflict. Staged and not
+   staged changes are one list, all against HEAD; ignored files are not shown. The list **updates by itself** (kuro asks git again every second and a half while it is
+   open, and a little less often at a pace that suits a slow `git status`), also when another program changes a file. The tree header shows the number of changes
+   (`3 changes (c)`). `Enter` shows the diff against HEAD (a new file is shown with every line added; the words that changed inside a line are marked); `n` / `p` step to
+   the next / previous changed file, and the diff follows the file when it changes again.
+
+### Discarding changes
+
+This is the one place where `kuro git` **changes your files**, so it always asks first, with a popup that lists the files and says it cannot be undone (there is no copy
+and no undo, as in VS Code):
+
+* `x` (or `Delete`; also in the diff of a change) discards the changes of the selected file: a modified or deleted file is restored from HEAD (the staged and the
+  not staged parts), a file that was added to the index is removed from the index and deleted.
+* `X` discards **all** changes. It asks about the tracked files first; **untracked files get a question of their own** afterwards (`y` deletes them, `n` keeps them).
+  When only untracked files are left, the question about them comes first.
+* **Merge conflicts are never discarded** (the message says so): resolve them with git.
+* Before anything is thrown away the working tree is looked at again: only files that are *still* changed, and that the question listed, are discarded; a file you
+  restored in the meantime is left alone. It is `git restore --source=HEAD --staged --worktree`, `git rm -f` and `git clean -f` on the listed paths (always after `--`);
+  ignored files, other files and the history are never touched.
+
 `o` opens a file **as it was at that commit** in the normal editor: syntax colours, find, scrollbars, copying, but **read-only**: every edit and every write
 (`Ctrl+S`, `:w`, `:e`, …) is refused, and nothing in the working tree is touched. A file deleted by the commit opens as it was in the parent. `q` closes it.
 
@@ -37,6 +57,13 @@ kuro git -fl src/app.rs     # the commit history of one file, renames followed
 | Lists | `Home End g G` | First / last row |
 | Tree | `Enter →` | Open a folder (or fold it); on a file: show that file's history |
 | Tree | `a Tab` | History of the whole repository |
+| Tree | `c` | The changes of the working tree (also from the history) |
+| Changes | `Enter → d` | Diff of the selected file against HEAD |
+| Changes | `x Delete` | Discard the changes of the selected file (asks first) |
+| Changes | `X` | Discard all changes (asks first; untracked files get a question of their own) |
+| Changes | `r` | Look again (the list also updates by itself) |
+| Diff of a change | `x` | Discard the changes of this file (asks first) |
+| Diff of a change | `n p` | Next / previous changed file |
 | History | `Enter →` | Open the selected commit |
 | History | `d` | Show its diff (of the followed file in a file history) |
 | History | `Tab t` | Back to the tree |
@@ -69,12 +96,12 @@ Whole new or whole removed lines, and pairs that share no word at all, are not m
 
 ## How it uses git, and why
 
-kuro runs the **`git` command** (read-only subcommands only: `rev-parse`, `symbolic-ref`, `ls-tree`, `rev-list`, `log`, `diff`, `diff-tree`, `show`, `hash-object`; the one exception is
-`commit-graph write`, which writes only into kuro's own cache folder, see below) rather than a library:
+kuro runs the **`git` command** (read-only subcommands: `rev-parse`, `symbolic-ref`, `ls-tree`, `rev-list`, `log`, `diff`, `diff-tree`, `show`, `status`, `hash-object`; the exceptions are
+`commit-graph write`, which writes only into kuro's own cache folder, see below, and `restore`, `rm` and `clean`, which run only when you confirm a discard in the changes view) rather than a library:
 it gives exactly what your own git gives (your configuration, rename detection, worktrees, huge repositories), and it adds no dependency or C library to kuro.
 The cost is that `git` must be installed, and that output is parsed (with NUL-separated, machine-readable formats, so odd file names are safe).
 
-Every call is `git --no-pager -C <repository> …` with `LC_ALL=C`, no terminal prompts and no optional locks (it never blocks or modifies a repository), and every
+Every call is `git --no-pager -C <repository> …` with `LC_ALL=C`, no terminal prompts and no optional locks (it never blocks a repository, and it modifies one only when you confirm a discard), and every
 call that produces a diff passes `--no-ext-diff --no-textconv`: **a repository cannot make kuro run a program it configured** (`diff.external`, `textconv`).
 
 ## Speed on large repositories
@@ -106,5 +133,5 @@ into it).
 
 ## Not covered## Not covered
 
-No staging, committing, checkout, blame or branch switching; merges are shown against their first parent only; very long diffs are not paged (they are read whole);
+No staging, committing, checkout, blame or branch switching (the changes view shows and discards, it does not stage or commit); renames in the working tree are listed as a deleted and a new file; merges are shown against their first parent only; very long diffs are not paged (they are read whole);
 and the terminal tests cannot show how a particular terminal draws the box characters of the scrollbars.

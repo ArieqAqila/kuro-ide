@@ -173,6 +173,76 @@ pub fn parse_file_log(out: &str) -> Vec<(Commit, Option<Change>)> {
         .collect()
 }
 
+/// One changed path of the working tree, as `git status` reports it (like an entry of VS Code's Source Control view).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WtChange {
+    pub path: String,
+    /// The two status letters of `git status --porcelain`: the index against HEAD, and the working tree against the index.
+    pub index: char,
+    pub work: char,
+}
+
+/// What kind of change a [`WtChange`] is, which decides how it is shown and how it is discarded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WtKind {
+    /// Not tracked by git: discarding deletes the file.
+    Untracked,
+    /// Added to the index, so not in HEAD: discarding removes it from the index and deletes the file.
+    New,
+    /// A merge conflict: kuro leaves it to you.
+    Conflict,
+    /// Deleted from the working tree (or the index).
+    Deleted,
+    /// Changed, in the working tree and/or the index: discarding restores it from HEAD.
+    Modified,
+}
+
+impl WtChange {
+    pub fn kind(&self) -> WtKind {
+        match (self.index, self.work) {
+            ('?', _) => WtKind::Untracked,
+            ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D') => WtKind::Conflict,
+            ('A', _) => WtKind::New,
+            ('D', _) | (_, 'D') => WtKind::Deleted,
+            _ => WtKind::Modified,
+        }
+    }
+
+    /// The letter shown in the list (VS Code's: `M` modified, `A` added, `D` deleted, `U` untracked, `!` conflict).
+    pub fn letter(&self) -> char {
+        match self.kind() {
+            WtKind::Untracked => 'U',
+            WtKind::New => 'A',
+            WtKind::Conflict => '!',
+            WtKind::Deleted => 'D',
+            WtKind::Modified => 'M',
+        }
+    }
+
+    pub fn label(&self) -> String {
+        format!("{}  {}", self.letter(), self.path)
+    }
+}
+
+/// Parse `git status --porcelain=v1 -z --no-renames` (`XY path\0`, no rename entries because `--no-renames` is used).
+pub fn parse_status(out: &str) -> Vec<WtChange> {
+    let mut v: Vec<WtChange> = out
+        .split('\0')
+        .filter(|e| e.len() > 3 && e.is_char_boundary(3))
+        .filter_map(|e| {
+            let mut c = e.chars();
+            let (index, work) = (c.next()?, c.next()?);
+            (e.as_bytes()[2] == b' ').then(|| WtChange { path: e[3..].to_string(), index, work })
+        })
+        .filter(|c| !(c.index == '!' && c.work == '!')) // ignored files
+        .collect();
+    v.sort_by(|a, b| a.path.cmp(&b.path));
+    v
+}
+
+/// The largest untracked file shown as a diff.
+const MAX_NEW_FILE_DIFF: u64 = 2 * 1024 * 1024;
+
 /// Cuts the growing output of a `log` into whole records, so commits can be shown while git is still walking the history.
 #[derive(Default)]
 pub struct RecordStream {
@@ -539,6 +609,84 @@ impl Git {
         Ok(text(self.run(&args)?))
     }
 
+    // ------------------------------------------------------------------------------------------ the working tree
+
+    /// The changes of the working tree against HEAD (staged and not staged together, untracked files included), sorted by path.
+    pub fn status(&self) -> Result<Vec<WtChange>, GitError> {
+        let out = self.run(&["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--ignore-submodules=all"])?;
+        Ok(parse_status(&text(out)))
+    }
+
+    /// The diff of one changed path against HEAD, as unified diff text. A file git does not know yet has no diff, so one is written
+    /// for it (every line added).
+    pub fn worktree_diff(&self, c: &WtChange) -> Result<String, GitError> {
+        match c.kind() {
+            WtKind::Untracked | WtKind::New => self.new_file_diff(&c.path),
+            WtKind::Conflict => Ok(text(self.run(&["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--", &c.path])?)),
+            _ => Ok(text(self.run(&["diff", "--no-ext-diff", "--no-textconv", "--no-color", "HEAD", "--", &c.path])?)),
+        }
+    }
+
+    fn new_file_diff(&self, path: &str) -> Result<String, GitError> {
+        let full = self.top.join(path);
+        let meta = std::fs::symlink_metadata(&full).map_err(|e| GitError::Failed(format!("{path}: {e}")))?;
+        let head = format!("diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n");
+        if meta.len() > MAX_NEW_FILE_DIFF {
+            return Ok(format!(
+                "{head}Binary files /dev/null and b/{path} differ (a new file of {} MiB is not shown)\n",
+                meta.len() / 1048576
+            ));
+        }
+        let bytes = std::fs::read(&full).map_err(|e| GitError::Failed(format!("{path}: {e}")))?;
+        if bytes.contains(&0) {
+            return Ok(format!("{head}Binary files /dev/null and b/{path} differ\n"));
+        }
+        let body = String::from_utf8_lossy(&bytes);
+        let lines: Vec<&str> = body.lines().collect();
+        if lines.is_empty() {
+            return Ok(head);
+        }
+        let mut out = format!("{head}@@ -0,0 +1,{} @@\n", lines.len());
+        for l in &lines {
+            out.push('+');
+            out.push_str(l);
+            out.push('\n');
+        }
+        if !body.ends_with('\n') {
+            out.push_str("\\ No newline at end of file\n");
+        }
+        Ok(out)
+    }
+
+    /// Throw the changes away: tracked changes are restored from HEAD (index and working tree), added files are removed, untracked
+    /// files are deleted. Conflicts are never touched. Paths come from `status` and always follow `--`.
+    pub fn discard(&self, changes: &[WtChange]) -> Result<usize, GitError> {
+        let paths_of =
+            |kinds: &[WtKind]| -> Vec<&str> { changes.iter().filter(|c| kinds.contains(&c.kind())).map(|c| c.path.as_str()).collect() };
+        let (restore, added, untracked) =
+            (paths_of(&[WtKind::Modified, WtKind::Deleted]), paths_of(&[WtKind::New]), paths_of(&[WtKind::Untracked]));
+        let mut done = 0;
+        if !restore.is_empty() {
+            let mut args = vec!["restore", "--source=HEAD", "--staged", "--worktree", "--"];
+            args.extend(&restore);
+            self.run(&args)?;
+            done += restore.len();
+        }
+        if !added.is_empty() {
+            let mut args = vec!["rm", "-f", "-q", "--"];
+            args.extend(&added);
+            self.run(&args)?;
+            done += added.len();
+        }
+        if !untracked.is_empty() {
+            let mut args = vec!["clean", "-f", "-q", "--"];
+            args.extend(&untracked);
+            self.run(&args)?;
+            done += untracked.len();
+        }
+        Ok(done)
+    }
+
     /// A file as it was at a commit.
     pub fn file_at(&self, c: &Commit, path: &str) -> Result<Vec<u8>, GitError> {
         self.run(&["show", &format!("{}:{path}", c.hash)])
@@ -666,6 +814,29 @@ mod tests {
         let out = st.push("\u{1e}h2".as_bytes());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0.hash, "h1");
+    }
+
+    #[test]
+    fn status_output_is_parsed_with_its_two_letters_and_odd_names() {
+        let out = " M src/a.rs\0M  staged.txt\0MM both.txt\0?? new file.txt\0A  added.txt\0 D gone.txt\0UU conflict.txt\0!! ignored.log\0?? -dash.txt\0?? caf\u{e9}.txt\0";
+        let v = parse_status(out);
+        let got: Vec<(&str, char, WtKind)> = v.iter().map(|c| (c.path.as_str(), c.letter(), c.kind())).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("-dash.txt", 'U', WtKind::Untracked),
+                ("added.txt", 'A', WtKind::New),
+                ("both.txt", 'M', WtKind::Modified),
+                ("caf\u{e9}.txt", 'U', WtKind::Untracked),
+                ("conflict.txt", '!', WtKind::Conflict),
+                ("gone.txt", 'D', WtKind::Deleted),
+                ("new file.txt", 'U', WtKind::Untracked),
+                ("src/a.rs", 'M', WtKind::Modified),
+                ("staged.txt", 'M', WtKind::Modified),
+            ]
+        );
+        assert!(parse_status("").is_empty());
+        assert!(parse_status("x").is_empty(), "a truncated entry is dropped");
     }
 
     #[test]

@@ -102,3 +102,37 @@ fn the_terminal_is_restored_when_it_quits() {
     assert!(raw.contains("\x1b[?1049l"), "the alternate screen was left");
     assert!(!raw.contains("38;2") && !raw.contains("38;5") && !raw.contains("48;"), "no truecolor, no 256-colour, no background");
 }
+
+#[test]
+fn changes_are_detected_while_it_runs_and_can_be_discarded_in_the_real_binary() {
+    let r = repo();
+    let dir = tempfile::tempdir().unwrap();
+    let mut pty = spawn(dir.path(), &r, &["git"]);
+    pty.wait_for("the tree", |s| screen_has(s, "README.md") && !screen_has(s, "(c)"));
+    // an edit made by another program shows up by itself, like in VS Code
+    r.write("README.md", "# demo\nan edit made elsewhere\n");
+    r.write("scratch.txt", "scratch\n");
+    pty.wait_for("the badge", |s| screen_has(s, "2 changes (c)"));
+    pty.send("c");
+    let s = pty.wait_for("the list", |s| screen_has(s, "M  README.md") && screen_has(s, "U  scratch.txt"));
+    assert!(screen_has(&s, "changes of the working tree (2)"), "{}", s.join("\n"));
+    pty.send("\r");
+    pty.wait_for("the diff", |s| screen_has(s, "+an edit made elsewhere"));
+    pty.send("\x1b"); // back to the list
+    pty.wait_for("the list again", |s| screen_has(s, "M  README.md") && screen_has(s, "Enter diff"));
+    pty.send("x");
+    pty.wait_for("the question", |s| screen_has(s, "Discard the changes of README.md?"));
+    pty.send("y");
+    pty.wait_for("restored", |s| !screen_has(s, "M  README.md") && screen_has(s, "U  scratch.txt"));
+    assert_eq!(std::fs::read_to_string(r.path().join("README.md")).unwrap(), "# demo\n");
+    assert!(r.path().join("scratch.txt").exists(), "the untracked file was not part of it");
+    pty.send("X");
+    pty.wait_for("the question about untracked files", |s| {
+        screen_has(s, "Delete the untracked file scratch.txt?") || screen_has(s, "untracked file")
+    });
+    pty.send("y");
+    pty.wait_for("clean", |s| screen_has(s, "no changes: the working tree is clean"));
+    assert!(!r.path().join("scratch.txt").exists());
+    pty.send("q");
+    assert!(pty.wait_exit());
+}
