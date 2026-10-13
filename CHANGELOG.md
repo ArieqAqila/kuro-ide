@@ -6,6 +6,9 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 
 ## [Unreleased]
 
+### Added
+- Alt + wheel scrolls sideways (in the text and in the result table), for terminals such as foot that keep Shift+wheel for their own text selection.
+
 ### Fixed
 - `:hardundo` now discards **unsaved edits** too, in every terminal on the file and also those recovered from an earlier session; before, it said "nothing to undo" for a file kuro had not saved.
 

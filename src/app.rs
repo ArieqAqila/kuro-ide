@@ -2872,6 +2872,7 @@ impl App {
         let l = self.layout(self.area);
         let (x, y) = (m.column, m.row);
         let shift = m.modifiers.contains(KeyModifiers::SHIFT);
+        let alt = m.modifiers.contains(KeyModifiers::ALT);
 
         // result pane
         if let Some(p) = l.pane
@@ -2935,8 +2936,9 @@ impl App {
                 self.drag_origin = None;
                 self.clamp_normal();
             }
-            // Shift + wheel is the fallback for terminals (or mice) that only send vertical wheel events
-            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if shift => {
+            // Shift or Alt + wheel is the fallback for terminals (or mice) that only send vertical wheel events; Alt is for
+            // terminals that keep Shift for their own text selection (foot, and most others)
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if shift || alt => {
                 let d = (self.cfg.editor.scroll_lines * 2) as isize;
                 self.scroll_cols(if m.kind == MouseEventKind::ScrollDown { d } else { -d });
             }
@@ -3143,7 +3145,7 @@ impl App {
     }
 
     fn pane_mouse(&mut self, m: MouseEvent, pane: Rect) {
-        let shift = m.modifiers.contains(KeyModifiers::SHIFT);
+        let shift = m.modifiers.contains(KeyModifiers::SHIFT) || m.modifiers.contains(KeyModifiers::ALT);
         match m.kind {
             MouseEventKind::ScrollDown if shift => self.scroll_table(0, 4),
             MouseEventKind::ScrollUp if shift => self.scroll_table(0, -4),

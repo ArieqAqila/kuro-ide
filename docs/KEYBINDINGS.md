@@ -27,13 +27,15 @@ kuro understands every common way a terminal reports a sideways wheel:
 | wheel buttons **6 / 7** (left / right) | SGR (`CSI < 66;x;y M`, `CSI < 67;x;y M`), the mode kuro asks for | yes |
 | the same buttons | X10 / normal (`CSI M` + 3 bytes) and urxvt (`CSI 98;x;y M`) | yes |
 | Shift + **vertical** wheel (button 4 / 5 with the shift bit) | any of the above | yes, as the fallback |
+| Alt + **vertical** wheel (button 4 / 5 with the alt bit) | any of the above | yes, for terminals that keep Shift |
 
 The view stops at the start of the text and at the end of the widest line (tabs counted at their display width).
 Which terminals send which form depends on the terminal, the mouse or trackpad and the platform, and was **not
 verified per terminal here** (see `docs/TESTING.md`): trackpads and tilt wheels normally produce 6/7 where the terminal
 supports them; if yours only sends vertical wheel events, Shift+wheel works unless the terminal keeps Shift for its
-own use (many terminals use Shift to bypass mouse reporting, which then never reaches kuro). `kuro` itself cannot
-tell which case you are in; try both.
+own use (many terminals use Shift to bypass mouse reporting, which then never reaches kuro; foot does this, and
+Shift+wheel then selects text in the terminal instead). In that case use **Alt+wheel**, which terminals pass on.
+`kuro` itself cannot tell which case you are in; try both.
 
 ## Which terminals can send Ctrl+Enter
 
@@ -256,9 +258,9 @@ since kuro's startup check is the authority. Without the protocol:
 | `Triple-click` | Select the line |
 | `Click the line number` | Select the whole line |
 | `Wheel` | Scroll up / down |
-| `Horizontal wheel or Shift+wheel` | Scroll sideways, between the start and the end of the longest line |
+| `Horizontal wheel, Shift+wheel or Alt+wheel` | Scroll sideways, between the start and the end of the longest line |
 | `Click find-bar buttons` | Aa / ab / .* toggles, ↑ ↓, ✕, ↵ replace, ⇉ replace all |
-| `Wheel over the table` | Scroll rows (Shift+wheel: columns) |
+| `Wheel over the table` | Scroll rows (Shift+wheel or Alt+wheel: columns) |
 | `Click / double-click a column header` | Select / expand the column |
 | `Click a picker row` | Choose it |
 

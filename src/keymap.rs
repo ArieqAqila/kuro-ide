@@ -196,9 +196,14 @@ pub const BINDINGS: &[Binding] = &[
     b("m_triple", "Triple-click", "Mouse", "Select the line"),
     b("m_gutter", "Click the line number", "Mouse", "Select the whole line"),
     b("m_wheel", "Wheel", "Mouse", "Scroll up / down"),
-    b("m_hwheel", "Horizontal wheel or Shift+wheel", "Mouse", "Scroll sideways, between the start and the end of the longest line"),
+    b(
+        "m_hwheel",
+        "Horizontal wheel, Shift+wheel or Alt+wheel",
+        "Mouse",
+        "Scroll sideways, between the start and the end of the longest line",
+    ),
     b("m_bar", "Click find-bar buttons", "Mouse", "Aa / ab / .* toggles, ↑ ↓, ✕, ↵ replace, ⇉ replace all"),
-    b("m_table_wheel", "Wheel over the table", "Mouse", "Scroll rows (Shift+wheel: columns)"),
+    b("m_table_wheel", "Wheel over the table", "Mouse", "Scroll rows (Shift+wheel or Alt+wheel: columns)"),
     b("m_table_header", "Click / double-click a column header", "Mouse", "Select / expand the column"),
     b("m_picker", "Click a picker row", "Mouse", "Choose it"),
 ];

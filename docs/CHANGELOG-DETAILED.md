@@ -6,6 +6,10 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 
 ## [Unreleased]
 
+### Added
+- Alt + vertical wheel scrolls sideways, like Shift + wheel, in the text and in the result table. Some terminals (foot among them) use Shift with the
+  mouse to select text themselves and never send those events to kuro, so Shift+wheel cannot work there. Tests: `tests/ui_hscroll.rs`, `m_hwheel` in `tests/keybindings.rs`.
+
 ### Fixed
 - `:hardundo` said "nothing to undo: kuro has not changed this file" when the edits were never saved (for example the `recovered N unsaved edits from the last
   session` case): hard undo only knew about writes to the file. It now also throws away every unsaved edit: a new `Discard` message makes the sync leader replace

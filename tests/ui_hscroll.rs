@@ -56,6 +56,23 @@ fn shift_plus_the_vertical_wheel_is_the_fallback() {
 }
 
 #[test]
+fn alt_plus_the_vertical_wheel_scrolls_sideways_too_for_terminals_that_keep_shift() {
+    let (mut a, gw, _) = app(&long_lines());
+    mouse_mod(&mut a, MouseEventKind::ScrollDown, gw + 2, 1, KeyModifiers::ALT);
+    let step = a.left_col;
+    assert!(step > 0, "Alt+wheel down scrolls right");
+    mouse_mod(&mut a, MouseEventKind::ScrollDown, gw + 2, 1, KeyModifiers::ALT);
+    assert_eq!(a.left_col, step * 2);
+    mouse_mod(&mut a, MouseEventKind::ScrollUp, gw + 2, 1, KeyModifiers::ALT);
+    assert_eq!(a.left_col, step, "Alt+wheel up scrolls left");
+    assert_eq!(a.top_line, 0, "and the view did not move vertically");
+    for _ in 0..50 {
+        mouse_mod(&mut a, MouseEventKind::ScrollUp, gw + 2, 1, KeyModifiers::ALT);
+    }
+    assert_eq!(a.left_col, 0, "clamped at the start");
+}
+
+#[test]
 fn it_is_clamped_at_the_start() {
     let (mut a, gw, _) = app(&long_lines());
     left(&mut a, gw);

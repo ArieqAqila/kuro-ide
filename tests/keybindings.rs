@@ -1615,6 +1615,8 @@ fn mouse_probes() -> Vec<(&'static str, Probe)> {
                 assert_eq!(a.left_col, 0);
                 mouse_mod(&mut a, K::ScrollDown, 10, 0, KeyModifiers::SHIFT);
                 assert_eq!(a.left_col, one, "Shift+wheel is the fallback");
+                mouse_mod(&mut a, K::ScrollUp, 10, 0, KeyModifiers::ALT);
+                assert_eq!(a.left_col, 0, "Alt+wheel is the fallback for terminals that keep Shift");
             }),
         ),
         (
