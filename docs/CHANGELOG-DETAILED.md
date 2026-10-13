@@ -7,6 +7,13 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
+- `kuro git` was very slow when you opened a file's history on a large repository (a test repository of about 108,000 commits: roughly 28 seconds). Cause: three
+  separate walks of the whole history (does the file have history, the renames, the commits). It is now one `git log --follow --name-status` walk (about 9 seconds
+  there, the rest is git's own cost), the file list is shown with `Reading the history of … a large repository can take a while` while it works (the reading starts one
+  screen update later), and `kuro git -fl FILE` prints that line before the screen opens (only when stderr is a terminal). Also fixed: loading the next page of a
+  file's history after 200 commits found nothing, because git cannot skip commits while following renames; the history is now read again from the start with a larger
+  limit. Tests: `tests/git_cmd.rs`, `tests/git_ui.rs` (`a_long_file_history_is_read_in_pages_too_…`, the notice in `enter_on_a_file_…`), the `parse_file_log` unit test.
+  `docs/GIT.md` has a "Speed on large repositories" section (commit graph with `--changed-paths`).
 - All messages are English now. The only Indonesian one, printed by `kuro git` outside a repository (`direktori tidak ada git`, the wording from the first task
   description), is `this directory is not in a git repository`, still on standard error with exit status 128. Tests: `tests/cli.rs`, `tests/git_cmd.rs`.
 

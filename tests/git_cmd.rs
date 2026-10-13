@@ -37,7 +37,7 @@ fn a_repository_with_no_commits_is_handled() {
     assert!(g.tree().unwrap().is_empty());
     assert!(g.log(None, false, 0, 10).unwrap().is_empty());
     assert!(g.log(Some("a.txt"), true, 0, 10).unwrap().is_empty());
-    assert!(g.follow_changes("a.txt").unwrap().is_empty());
+    assert!(g.file_history("a.txt", 10).unwrap().is_empty());
     assert!(!g.has_history("a.txt"));
 }
 
@@ -115,8 +115,17 @@ fn file_history_follows_a_rename() {
         followed.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(),
         vec!["edit new_name", "rename it", "edit old_name", "add old_name"]
     );
-    let ch = g.follow_changes("new_name.txt").unwrap();
+    let ch = g.file_history("new_name.txt", 20).unwrap();
     assert_eq!(ch.len(), 4);
+    assert_eq!(
+        ch.iter().map(|(c, _)| c.subject.as_str()).collect::<Vec<_>>(),
+        followed.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(),
+        "the single walk gives the same commits as the separate log"
+    );
+    // a longer read starts from the newest commit again: git finds nothing when it follows a rename across skipped commits
+    assert_eq!(g.file_history("new_name.txt", 2).unwrap().len(), 2);
+    assert_eq!(g.file_history("new_name.txt", 3).unwrap().len(), 3);
+    assert!(g.log(Some("new_name.txt"), true, 2, 20).unwrap().is_empty(), "git cannot skip with --follow");
     let rename = ch[1].1.as_ref().unwrap();
     assert_eq!((rename.status, rename.old_path.as_deref(), rename.path.as_str()), ('R', Some("old_name.txt"), "new_name.txt"));
     assert_eq!(ch[3].1.as_ref().unwrap().path, "old_name.txt", "before the rename the file had its old name");

@@ -217,6 +217,12 @@ fn git_main(args: &[String]) -> Result<()> {
         None => None,
     };
     let (cfg, _warnings) = Config::load(&default_config_path());
+    if let Some(f) = &rel {
+        use std::io::IsTerminal;
+        if std::io::stderr().is_terminal() {
+            eprintln!("reading the history of {f} … a large repository can take a while");
+        }
+    }
     let mut app = match GitApp::new(git, cfg.clone(), rel) {
         Ok(a) => a,
         Err(e) => {

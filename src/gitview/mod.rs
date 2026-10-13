@@ -129,6 +129,9 @@ pub struct GitApp {
     /// Extension languages and terminal colours, handed to the read-only file view.
     pub ext_langs: Vec<&'static crate::syntax::LangSpec>,
     pub palette: Option<crate::palette::Palette>,
+    /// A file whose history is still to be read: the screen first shows that kuro is working (git can take many seconds on a
+    /// large repository), the next `tick` does the reading. The flag says the notice has been put on screen.
+    pending: Option<(String, bool)>,
 }
 
 fn text_lines(s: &str) -> Vec<String> {
@@ -174,6 +177,7 @@ impl GitApp {
             make_clipboard,
             ext_langs: vec![],
             palette: None,
+            pending: None,
         };
         app.rebuild_tree();
         match file {
@@ -236,13 +240,6 @@ impl GitApp {
         self.followed.clear();
         self.all_loaded = false;
         self.history = Scroll::default();
-        if let Scope::File(f) = &self.scope {
-            for (hash, change) in self.git.follow_changes(f)? {
-                if let Some(c) = change {
-                    self.followed.insert(hash, c);
-                }
-            }
-        }
         self.load_more()
     }
 
@@ -251,11 +248,24 @@ impl GitApp {
         if self.all_loaded {
             return Ok(());
         }
-        let (path, follow) = match &self.scope {
-            Scope::Repo => (None, false),
-            Scope::File(f) => (Some(f.clone()), true),
+        let page = match self.scope.clone() {
+            Scope::Repo => self.git.log(None, false, self.commits.len(), PAGE)?,
+            // one walk gives the commits and the change each made to the file
+            // (git cannot skip commits while following renames, so the history is read again from the start, one page longer)
+            Scope::File(f) => {
+                let wanted = self.commits.len() + PAGE;
+                let mut commits = vec![];
+                for (commit, change) in self.git.file_history(&f, wanted)? {
+                    if let Some(c) = change {
+                        self.followed.insert(commit.hash.clone(), c);
+                    }
+                    commits.push(commit);
+                }
+                self.all_loaded = commits.len() < wanted;
+                self.commits = commits;
+                return Ok(());
+            }
         };
-        let page = self.git.log(path.as_deref(), follow, self.commits.len(), PAGE)?;
         if page.len() < PAGE {
             self.all_loaded = true;
         }
@@ -263,12 +273,19 @@ impl GitApp {
         Ok(())
     }
 
+    /// Show the history of `path` after the next screen update, which tells the user that the reading has started.
+    pub fn request_file_history(&mut self, path: &str) {
+        self.msg = format!("Reading the history of {path} … a large repository can take a while");
+        self.pending = Some((path.to_string(), false));
+    }
+
     /// Show the history of `path`; an error message when it has none.
     pub fn show_file_history(&mut self, path: &str) -> Result<(), GitError> {
-        if !self.git.has_history(path) {
+        self.load_history(Scope::File(path.to_string()))?;
+        if self.commits.is_empty() {
+            self.scope = Scope::Repo;
             return Err(GitError::Failed(format!("no history for {path}")));
         }
-        self.load_history(Scope::File(path.to_string()))?;
         self.view = View::History;
         self.back = vec![View::Tree];
         Ok(())
@@ -495,8 +512,8 @@ impl GitApp {
                         self.expanded.insert(row.path.clone());
                     }
                     self.rebuild_tree();
-                } else if let Err(e) = self.show_file_history(&row.path) {
-                    self.msg = e.to_string();
+                } else {
+                    self.request_file_history(&row.path);
                 }
             }
             View::History => {
@@ -718,8 +735,27 @@ impl GitApp {
         self.set_offset(vertical, (cur + d).max(0) as usize);
     }
 
+    /// Is a file history waiting to be read (tests)?
+    pub fn busy_for_test(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Do the reading that `request_file_history` announced, one update after the notice was drawn.
     pub fn tick(&mut self) -> bool {
-        false
+        match self.pending.take() {
+            Some((path, false)) => {
+                self.pending = Some((path, true));
+                true
+            }
+            Some((path, true)) => {
+                self.msg.clear();
+                if let Err(e) = self.show_file_history(&path) {
+                    self.msg = e.to_string();
+                }
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -743,7 +779,7 @@ impl crate::screen::Screen for GitApp {
         GitApp::tick(self)
     }
     fn busy(&self) -> bool {
-        false
+        self.pending.is_some()
     }
     fn quit(&self) -> bool {
         self.quit

@@ -122,9 +122,18 @@ mod views {
             press(&mut a, "Down");
         }
         press(&mut a, "Enter");
+        // the screen first says that the reading has started (git can take many seconds), then the next update does it
+        assert_eq!(a.view, View::Tree);
+        assert!(a.busy_for_test());
+        assert!(screen(&mut a).contains("Reading the history of README.md"));
+        assert!(a.tick(), "the notice is on screen: nothing read yet");
+        assert_eq!(a.view, View::Tree);
+        assert!(a.tick(), "now the history is read");
         assert_eq!(a.view, View::History);
+        assert!(!a.busy_for_test());
         let s = screen(&mut a);
         assert!(s.contains("history of README.md"), "{s}");
+        assert!(!s.contains("Reading the history"), "the notice is gone: {s}");
         assert!(
             s.contains("Update the readme") && s.contains("Initial import") && !s.contains("Edit main"),
             "only this file's commits:\n{s}"
@@ -560,6 +569,22 @@ pub mod pointer {
         assert_eq!(a.commits.len(), 450);
         assert!(a.all_loaded);
         assert!(screen(&mut a).contains("commit number 0"));
+    }
+
+    #[test]
+    fn a_long_file_history_is_read_in_pages_too_although_git_cannot_skip_while_following() {
+        let mut r = Repo::new();
+        r.many_commits(450);
+        let mut a = app(&r, Some("count.txt"));
+        assert_eq!(a.commits.len(), 200);
+        assert!(!a.all_loaded);
+        press(&mut a, "End");
+        assert!(a.commits.len() >= 400, "the next page was loaded: {}", a.commits.len());
+        press(&mut a, "End End End");
+        assert_eq!(a.commits.len(), 450, "no commit twice, none missing");
+        assert!(a.all_loaded);
+        let subjects: std::collections::HashSet<_> = a.commits.iter().map(|c| c.subject.clone()).collect();
+        assert_eq!(subjects.len(), 450);
     }
 }
 mod keys_and_docs {

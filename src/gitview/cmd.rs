@@ -153,13 +153,14 @@ pub fn parse_name_status(out: &str) -> Vec<Change> {
     changes
 }
 
-/// Parse `log --follow --name-status -z --format=%x1e%H`: each commit with the change that touched the followed file.
-pub fn parse_follow(out: &str) -> Vec<(String, Option<Change>)> {
+/// Parse `log --follow --name-status -z --format=`[`LOG_FORMAT`]: each commit with the change that touched the followed file.
+pub fn parse_file_log(out: &str) -> Vec<(Commit, Option<Change>)> {
     out.split(RECORD)
         .filter(|r| !r.trim().is_empty())
-        .map(|r| {
-            let (hash, rest) = r.split_once(['\0', '\n']).unwrap_or((r, ""));
-            (hash.trim().to_string(), parse_name_status(rest).into_iter().next())
+        .filter_map(|r| {
+            let (head, rest) = r.split_once('\0').unwrap_or((r, ""));
+            let commit = parse_log(head).into_iter().next()?;
+            Some((commit, parse_name_status(rest).into_iter().next()))
         })
         .collect()
 }
@@ -224,13 +225,19 @@ impl Git {
         Ok(parse_log(&text(self.run(&args)?)))
     }
 
-    /// For file history with renames: the path the file had at each commit (a rename shows as an `R` change).
-    pub fn follow_changes(&self, path: &str) -> Result<Vec<(String, Option<Change>)>, GitError> {
+    /// The history of one file, following renames, in **one** walk of the history (walking 100,000 commits takes seconds, so the
+    /// commits and the path the file had in each are read together): the newest `count` commits, each with the
+    /// change that touched the file (a rename shows as an `R` change). There is no `skip`: git cannot follow a rename across skipped
+    /// commits (it finds nothing after them), so a longer history is read again from the start with a larger `count`.
+    pub fn file_history(&self, path: &str, count: usize) -> Result<Vec<(Commit, Option<Change>)>, GitError> {
         if !self.has_commits() {
             return Ok(vec![]);
         }
-        let out = self.run(&["log", "--follow", "--name-status", "-M", "-z", "--format=%x1e%H", "--", path])?;
-        Ok(parse_follow(&text(out)))
+        let count = format!("--max-count={count}");
+        let format = format!("--format={LOG_FORMAT}");
+        let out =
+            self.run(&["log", "--follow", "--name-status", "-M", "-z", "--date=format:%Y-%m-%d %H:%M", &format, &count, "--", path])?;
+        Ok(parse_file_log(&text(out)))
     }
 
     /// The hash of git's empty tree (differs between SHA-1 and SHA-256 repositories).
@@ -349,11 +356,12 @@ mod tests {
     }
 
     #[test]
-    fn follow_output_pairs_each_commit_with_its_change() {
-        let out = "\u{1e}h2\0\nR090\0a.txt\0b.txt\0\u{1e}h1\0\nA\0a.txt\0";
-        let f = parse_follow(out);
+    fn file_log_output_pairs_each_commit_with_its_change() {
+        let rec = |h: &str| format!("\u{1e}{h}\u{1f}{h}\u{1f}an\u{1f}e@x\u{1f}2026-01-02 03:04\u{1f}subject {h}\u{1f}p1 p2");
+        let out = format!("{}\0\nR090\0a.txt\0b.txt\0{}\0\nA\0a.txt\0", rec("h2"), rec("h1"));
+        let f = parse_file_log(&out);
         assert_eq!(f.len(), 2);
-        assert_eq!(f[0].0, "h2");
+        assert_eq!((f[0].0.hash.as_str(), f[0].0.subject.as_str(), f[0].0.parents.len()), ("h2", "subject h2", 2));
         assert_eq!(f[0].1.as_ref().unwrap().old_path.as_deref(), Some("a.txt"));
         assert_eq!(f[1].1.as_ref().unwrap().status, 'A');
     }

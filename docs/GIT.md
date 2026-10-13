@@ -69,6 +69,24 @@ The cost is that `git` must be installed, and that output is parsed (with NUL-se
 Every call is `git --no-pager -C <repository> …` with `LC_ALL=C`, no terminal prompts and no optional locks (it never blocks or modifies a repository), and every
 call that produces a diff passes `--no-ext-diff --no-textconv`: **a repository cannot make kuro run a program it configured** (`diff.external`, `textconv`).
 
+## Speed on large repositories
+
+The history of **one file** is the slow part: git has to compare every commit with its parent to find the ones that touched the file, and to follow
+renames it must walk the whole history. In a repository of about 108,000 commits that took git itself about 14 seconds (and kuro used to do it three times;
+it now reads the commits and the renames in **one** walk, about 9 seconds there). While it works, kuro says so (`Reading the history of … a large repository
+can take a while`) instead of looking frozen; `kuro git -fl FILE` prints the same line on the terminal before the screen opens. The first 200 commits are read
+first; going further down reads the history again with a larger limit (git cannot skip commits while it follows renames).
+
+You can make git itself much faster for the plain per-file log (it did 5.6 s → 0.2 s on that repository) by writing a commit graph with changed-path filters, once,
+in your own repository (kuro never changes a repository):
+
+```fish
+git commit-graph write --reachable --changed-paths
+git config fetch.writeCommitGraph true      # keep it up to date after fetches
+```
+
+Following renames (`--follow`) does not use those filters, so it stays a full walk.
+
 ## Not covered
 
 No staging, committing, checkout, blame or branch switching; merges are shown against their first parent only; very long diffs are not paged (they are read whole);
