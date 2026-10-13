@@ -16,6 +16,7 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 - The scrollbars have no arrow buttons any more (the whole bar is track: a click pages, the thumb drags). They are thin: one column / one row of line glyphs (the thumb a heavier line `┃` / `━`, the track a light `│` / `─`), no more reverse-video blocks, also in `kuro git`.
 
 ### Added
+- `kuro --show-input`: prints the bytes your terminal sends for keys and the mouse wheel and how kuro parsed them (to find out why a wheel or a key does nothing).
 - Alt + wheel scrolls sideways (in the text and in the result table), for terminals such as foot that keep Shift+wheel for their own text selection.
 
 ### Fixed

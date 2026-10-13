@@ -37,6 +37,16 @@ own use (many terminals use Shift to bypass mouse reporting, which then never re
 Shift+wheel then selects text in the terminal instead). In that case use **Alt+wheel**, which terminals pass on.
 `kuro` itself cannot tell which case you are in; try both.
 
+## When the mouse wheel does nothing: `kuro --show-input`
+
+```fish
+kuro --show-input
+```
+
+shows, for every key and mouse event, the bytes your terminal sent and what kuro made of them (`ScrollDown`, `ScrollLeft`, with or without `SHIFT` / `ALT`). Scroll the
+wheel over it, also with Shift, Alt and Ctrl held, then quit with Ctrl+C. Nothing printed for an event means the terminal does not pass it on to programs (many
+terminals keep Shift+mouse for their own text selection, which is why Alt+wheel exists); `ScrollDown` printed but no scrolling in the editor would be a kuro bug.
+
 ## Which terminals can send Ctrl+Enter
 
 Most terminals send the very same byte for **Enter** and **Ctrl+Enter** (a carriage return), so no program can tell

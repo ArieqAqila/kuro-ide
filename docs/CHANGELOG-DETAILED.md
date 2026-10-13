@@ -34,6 +34,8 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
   bar, the last row of a frame, was drawn. They now wait for the whole first frame.
 
 ### Added
+- `kuro --show-input` shows every key and mouse event as the terminal sent it (escaped bytes) and as kuro parsed it, until Ctrl+C. It is there for reports such as
+  "the wheel does not scroll": it tells whether the terminal sends the event at all (with Shift / Alt / Ctrl too). Test: `tests/pty_showinput.rs`.
 - Alt + vertical wheel scrolls sideways, like Shift + wheel, in the text and in the result table. Some terminals (foot among them) use Shift with the
   mouse to select text themselves and never send those events to kuro, so Shift+wheel cannot work there. Tests: `tests/ui_hscroll.rs`, `m_hwheel` in `tests/keybindings.rs`.
 

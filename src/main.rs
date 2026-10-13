@@ -27,6 +27,7 @@ USAGE:
 
 OPTIONS:
     --config FILE   read this config.toml instead of $KURO_CONFIG_DIR / ~/.config/kuro/config.toml
+    --show-input    show what your terminal sends for keys and the mouse wheel, as kuro understands it (Ctrl+C quits)
     --version       print the version
     -h, --help      print this help
 
@@ -51,6 +52,10 @@ fn parse_args() -> Result<Option<Args>> {
                 println!("{HELP}");
                 return Ok(None);
             }
+            "--show-input" => {
+                show_input()?;
+                return Ok(None);
+            }
             "--config" => a.config = Some(it.next().context("--config needs a path")?.into()),
             s if s.starts_with('-') && s != "-" => anyhow::bail!("unknown option {s} (try --help)"),
             s => a.file = Some(s.into()),
@@ -73,6 +78,49 @@ fn restore(kitty: bool) {
     }
     let _ = execute!(stdout(), DisableBracketedPaste, DisableMouseCapture, LeaveAlternateScreen);
     let _ = disable_raw_mode();
+}
+
+/// `kuro --show-input`: every key and mouse event as the terminal sent it (escaped bytes) and as kuro parsed it. For finding out why a
+/// wheel, a modifier or a key does nothing: if nothing is printed for it, the terminal does not send it to programs.
+fn show_input() -> Result<()> {
+    use std::io::Write;
+    enable_raw_mode()?;
+    execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
+    let rx = spawn_reader();
+    let mut parser = InputParser::new();
+    let mut out = stdout();
+    let _ = write!(out, "kuro --show-input: press keys, click, scroll the wheel (also with Shift / Alt / Ctrl). Ctrl+C quits.\r\n");
+    let _ = out.flush();
+    loop {
+        let wait = if parser.has_pending() { Duration::from_millis(30) } else { Duration::from_millis(200) };
+        match rx.recv_timeout(wait) {
+            Ok(bytes) => {
+                if bytes.contains(&3) {
+                    break;
+                }
+                let raw: String = bytes.iter().flat_map(|b| std::ascii::escape_default(*b)).map(char::from).collect();
+                let events = parser.feed(&bytes);
+                let _ = write!(out, "bytes {raw}\r\n");
+                for e in events {
+                    let _ = write!(out, "    -> {e:?}\r\n");
+                }
+                if bytes.len() == 1 && bytes[0] == 0x1b {
+                    let _ = write!(out, "    (a lone Esc: waiting to see if more follows)\r\n");
+                }
+                let _ = out.flush();
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                for e in parser.flush_timeout() {
+                    let _ = write!(out, "    -> {e:?}\r\n");
+                }
+                let _ = out.flush();
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    let _ = execute!(stdout(), DisableBracketedPaste, DisableMouseCapture);
+    let _ = disable_raw_mode();
+    Ok(())
 }
 
 /// Raw bytes from the terminal, read on a helper thread so the main loop can time out.
