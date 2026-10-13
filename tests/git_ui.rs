@@ -316,18 +316,18 @@ mod diffs {
         let mut a = app(&r, None);
         to_whole_diff(&mut a, 3);
         let buf = draw(&mut a);
-        assert_eq!(buf[(W - 1, 1)].symbol(), "▲");
-        assert_eq!(buf[(W - 1, H - 2)].symbol(), "▼");
+        assert!(!"▲▼".contains(buf[(W - 1, 1)].symbol()) && !"▲▼".contains(buf[(W - 1, H - 2)].symbol()), "no arrow buttons");
         let thumb = |buf: &Cells| (1..H - 1).filter(|&y| buf[(W - 1, y)].symbol() == "┃").collect::<Vec<_>>();
         let top = thumb(&buf);
-        assert_eq!(top[0], 2, "the thumb starts right under the arrow");
+        assert_eq!(top[0], 1, "the thumb starts at the top of the bar");
         press(&mut a, "End");
         let bottom = thumb(&draw(&mut a));
-        assert_eq!(*bottom.last().unwrap(), H - 3, "and ends right above the arrow at the end");
+        assert_eq!(*bottom.last().unwrap(), H - 2, "and ends at the bottom of the bar at the end");
         // a short diff has none
         let mut b = app(&r, None);
         to_whole_diff(&mut b, 0);
-        assert_ne!(draw(&mut b)[(W - 1, 1)].symbol(), "▲");
+        let short = draw(&mut b);
+        assert!((1..H - 1).all(|y| !["┃", "│"].contains(&short[(W - 1, y)].symbol())), "a short diff has no bar");
     }
 
     #[test]
@@ -340,7 +340,7 @@ mod diffs {
         press(&mut a, "d");
         assert_eq!(a.view, View::Diff);
         let buf = draw(&mut a);
-        assert_eq!(buf[(0, H - 2)].symbol(), "◀", "a horizontal bar");
+        assert!(["━", "─"].contains(&buf[(0, H - 2)].symbol()), "a horizontal bar");
         press(&mut a, "l l");
         assert_eq!(a.diff_left, 16);
         press(&mut a, "h");
@@ -525,17 +525,18 @@ pub mod pointer {
     }
 
     #[test]
-    fn scrollbar_arrows_track_and_thumb_work_in_the_history() {
+    fn scrollbar_track_and_thumb_work_in_the_history_and_there_are_no_arrow_buttons() {
         let mut r = Repo::new();
         r.many_commits(120);
         let mut a = app(&r, None);
         press(&mut a, "a");
         draw(&mut a); // the window size is known after the first draw
         let x = W - 1;
-        mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, H - 2); // the down arrow (last body row)
-        assert_eq!(a.history.top, 1);
-        mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, 1); // the up arrow
-        assert_eq!(a.history.top, 0);
+        // the last cell of the bar is track like any other (it was a down arrow once): a page, not one line
+        mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, H - 2);
+        assert_eq!(a.history.top, 27, "one page (rows - 1)");
+        mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, 1); // the thumb is not here any more: the track above it
+        assert_eq!(a.history.top, 0, "paged back");
         mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, H - 4); // the track below the thumb: a page
         assert_eq!(a.history.top, 27, "one page (rows - 1)");
         // drag the thumb to the bottom

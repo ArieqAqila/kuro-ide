@@ -723,8 +723,6 @@ impl GitApp {
                         let pos = if vertical { (y - r.y) as usize } else { (x - r.x) as usize };
                         let page = (if vertical { self.list_height() } else { r.width as usize }).saturating_sub(1).max(1) as isize;
                         match bar.part_at(pos) {
-                            Part::ArrowStart => self.step_offset(vertical, -1),
-                            Part::ArrowEnd => self.step_offset(vertical, 1),
                             Part::BeforeThumb => self.step_offset(vertical, -page),
                             Part::AfterThumb => self.step_offset(vertical, page),
                             Part::Thumb { grab } => {

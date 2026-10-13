@@ -204,7 +204,7 @@ impl App {
         buf.set_stringn(rect.x + 2, y + 1, table::fit(foot, inner_w), inner_w, bold());
     }
 
-    /// The vertical and horizontal scrollbars: arrows at the ends, a dim track, and a thumb in reverse video
+    /// The vertical and horizontal scrollbars: a dim track and a bold thumb, both thin line glyphs
     /// (no background colour is ever set).
     fn render_scrollbars(&self, buf: &mut Cells, l: &Layout) {
         if let Some(r) = l.vbar
@@ -578,21 +578,14 @@ pub fn rows_text(buf: &Cells) -> Vec<String> {
 pub(crate) fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, vertical: bool) {
     let thumb = bar.thumb_cells();
     for i in 0..bar.len {
-        // a vertical bar is several columns wide: the same symbol across the width, the track line only in the first column
-        for c in 0..if vertical { r.width } else { 1 } {
-            let (x, y) = if vertical { (r.x + c, r.y + i as u16) } else { (r.x + i as u16, r.y) };
-            let (sym, style) = if bar.arrows && i == 0 {
-                (if vertical { "▲" } else { "◀" }, Style::default())
-            } else if bar.arrows && i + 1 == bar.len {
-                (if vertical { "▼" } else { "▶" }, Style::default())
-            } else if thumb.contains(&i) {
-                // a heavier line, not a block: the bar stays thin
-                (if vertical { "┃" } else { "━" }, Style::default().add_modifier(Modifier::BOLD))
-            } else {
-                (if vertical { "│" } else { "─" }, dim())
-            };
-            buf.set_string(x, y, sym, style);
-        }
+        let (x, y) = if vertical { (r.x, r.y + i as u16) } else { (r.x + i as u16, r.y) };
+        let (sym, style) = if thumb.contains(&i) {
+            // a heavier line, not a block: the bar stays thin
+            (if vertical { "┃" } else { "━" }, Style::default().add_modifier(Modifier::BOLD))
+        } else {
+            (if vertical { "│" } else { "─" }, dim())
+        };
+        buf.set_string(x, y, sym, style);
     }
 }
 

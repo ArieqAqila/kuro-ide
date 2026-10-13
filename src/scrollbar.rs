@@ -1,7 +1,7 @@
 //! Scrollbar geometry: pure functions, no drawing and no app state.
 //!
-//! A bar is a strip of `len` cells. When it is long enough the first and last cell are arrows (step by one),
-//! and the cells between them are the *track* with a *thumb* whose length is the visible fraction of the content.
+//! A bar is a strip of `len` cells: the *track*, with a *thumb* whose length is the visible fraction of the content
+//! (no arrow buttons: the wheel and the keys step, the track pages, the thumb drags).
 //! Everything is in cells, so the same code serves the vertical and the horizontal bar.
 
 /// Columns the vertical bar is wide: one, drawn with thin line glyphs (the thumb is a heavier line), so it stays slim.
@@ -10,10 +10,6 @@ pub const VERTICAL_WIDTH: u16 = 1;
 /// Where a point on a bar is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {
-    /// The arrow at the start (up / left): step back by one.
-    ArrowStart,
-    /// The arrow at the end (down / right): step forward by one.
-    ArrowEnd,
     /// The track before the thumb: page back.
     BeforeThumb,
     /// The track after the thumb: page forward.
@@ -25,12 +21,8 @@ pub enum Part {
 /// Geometry of one bar for a given content, viewport and scroll offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bar {
-    /// Cells in the whole strip, arrows included.
+    /// Cells in the whole strip (all of it is track).
     pub len: usize,
-    /// Arrows are shown at both ends (they need the strip to be at least 4 cells).
-    pub arrows: bool,
-    /// First track cell (1 with arrows, else 0) and the number of track cells.
-    pub track_start: usize,
     pub track_len: usize,
     /// Thumb start (within the track) and length.
     pub thumb_start: usize,
@@ -45,8 +37,7 @@ pub fn bar(len: usize, content: usize, viewport: usize, offset: usize) -> Option
     if len == 0 || viewport == 0 || content <= viewport {
         return None;
     }
-    let arrows = len >= 4;
-    let (track_start, track_len) = if arrows { (1, len - 2) } else { (0, len) };
+    let track_len = len;
     let max_offset = content - viewport;
     // thumb length: the visible fraction of the content, at least one cell, at most the track
     let thumb_len = ((track_len * viewport).div_ceil(content)).clamp(1, track_len);
@@ -54,19 +45,13 @@ pub fn bar(len: usize, content: usize, viewport: usize, offset: usize) -> Option
     let offset = offset.min(max_offset);
     // rounded to the nearest cell, so the thumb touches both ends exactly at offset 0 and max_offset
     let thumb_start = (room * offset + max_offset / 2) / max_offset;
-    Some(Bar { len, arrows, track_start, track_len, thumb_start, thumb_len, max_offset })
+    Some(Bar { len, track_len, thumb_start, thumb_len, max_offset })
 }
 
 impl Bar {
     /// What is at cell `pos` of the strip (0 = first cell).
     pub fn part_at(&self, pos: usize) -> Part {
-        if self.arrows && pos == 0 {
-            return Part::ArrowStart;
-        }
-        if self.arrows && pos + 1 >= self.len {
-            return Part::ArrowEnd;
-        }
-        let t = pos.saturating_sub(self.track_start);
+        let t = pos;
         if t < self.thumb_start {
             Part::BeforeThumb
         } else if t < self.thumb_start + self.thumb_len {
@@ -88,13 +73,13 @@ impl Bar {
 
     /// The offset for a drag that has the pointer at strip cell `pos`, holding the thumb `grab` cells from its start.
     pub fn offset_for_pointer(&self, pos: isize, grab: usize) -> usize {
-        let start = pos - self.track_start as isize - grab as isize;
+        let start = pos - grab as isize;
         self.offset_for_thumb_start(start.max(0) as usize)
     }
 
     /// Which strip cells are thumb (relative to the strip).
     pub fn thumb_cells(&self) -> std::ops::Range<usize> {
-        let s = self.track_start + self.thumb_start;
+        let s = self.thumb_start;
         s..s + self.thumb_len
     }
 }
@@ -113,14 +98,14 @@ mod tests {
 
     #[test]
     fn thumb_length_is_the_visible_fraction_of_the_track() {
-        // track = 20 - 2 arrows = 18 cells; half the content visible: 9 cells
+        // the whole strip is track: 20 cells; half the content visible: 10 cells
         let b = bar(20, 100, 50, 0).unwrap();
-        assert_eq!((b.track_len, b.thumb_len), (18, 9));
-        // a tenth visible: 1.8 -> 2 cells
+        assert_eq!((b.track_len, b.thumb_len), (20, 10));
+        // a tenth visible: 2 cells
         assert_eq!(bar(20, 1000, 100, 0).unwrap().thumb_len, 2);
         // never smaller than one cell, never larger than the track
         assert_eq!(bar(20, 1_000_000, 10, 0).unwrap().thumb_len, 1);
-        assert_eq!(bar(20, 101, 100, 0).unwrap().thumb_len, 18);
+        assert_eq!(bar(20, 101, 100, 0).unwrap().thumb_len, 20);
     }
 
     #[test]
@@ -131,25 +116,22 @@ mod tests {
         assert_eq!(end.thumb_start + end.thumb_len, end.track_len, "at the maximum the thumb touches the end");
         let mid = bar(22, 200, 20, 90).unwrap();
         let room = mid.track_len - mid.thumb_len;
-        assert_eq!(mid.thumb_start, room / 2, "halfway");
+        assert_eq!(mid.thumb_start, room.div_ceil(2), "halfway, rounded to the nearest cell (9.5 -> 10)");
         // offsets past the end clamp
         assert_eq!(bar(22, 200, 20, 9999).unwrap(), end);
     }
 
     #[test]
-    fn short_strips_have_no_arrows() {
-        let b = bar(3, 100, 10, 0).unwrap();
-        assert!(!b.arrows);
-        assert_eq!((b.track_start, b.track_len), (0, 3));
-        assert!(bar(4, 100, 10, 0).unwrap().arrows);
-        assert_eq!(bar(1, 100, 10, 0).unwrap().thumb_len, 1);
+    fn a_one_cell_strip_still_has_a_thumb() {
+        let b = bar(1, 100, 10, 0).unwrap();
+        assert_eq!((b.track_len, b.thumb_len), (1, 1));
     }
 
     #[test]
     fn parts_are_found_by_position() {
-        let b = bar(22, 200, 20, 90).unwrap(); // arrows at 0 and 21; track 1..21
-        assert_eq!(b.part_at(0), Part::ArrowStart);
-        assert_eq!(b.part_at(21), Part::ArrowEnd);
+        let b = bar(22, 200, 20, 90).unwrap();
+        assert_eq!(b.part_at(0), Part::BeforeThumb, "the first cell is track, not a button");
+        assert_eq!(b.part_at(21), Part::AfterThumb, "and so is the last");
         let t = b.thumb_cells();
         assert_eq!(b.part_at(t.start), Part::Thumb { grab: 0 });
         assert_eq!(b.part_at(t.end - 1), Part::Thumb { grab: b.thumb_len - 1 });
@@ -160,7 +142,7 @@ mod tests {
     #[test]
     fn dragging_maps_the_pointer_back_to_an_offset_and_clamps() {
         let b = bar(22, 200, 20, 0).unwrap();
-        assert_eq!(b.offset_for_pointer(1, 0), 0);
+        assert_eq!(b.offset_for_pointer(0, 0), 0, "the first cell is the start of the track");
         assert_eq!(b.offset_for_pointer(-5, 0), 0, "above the bar");
         assert_eq!(b.offset_for_pointer(500, 0), b.max_offset, "far below the bar");
         let room = b.track_len - b.thumb_len;
@@ -168,7 +150,7 @@ mod tests {
         // holding the thumb in the middle: the pointer at the thumb's middle keeps the offset
         let b = bar(22, 200, 20, 90).unwrap();
         let grab = b.thumb_len / 2;
-        let pos = (b.track_start + b.thumb_start + grab) as isize;
+        let pos = (b.thumb_start + grab) as isize;
         let back = b.offset_for_pointer(pos, grab);
         assert!(back.abs_diff(90) <= b.max_offset.div_ceil(b.track_len - b.thumb_len), "round trip within one cell: {back}");
     }

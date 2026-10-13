@@ -7,6 +7,7 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
+- Removed the arrow buttons of the scrollbars (`▲ ▼ ◀ ▶`): the whole strip is track, so a click anywhere off the thumb pages (also on the first and last cell), the thumb still drags, the wheel and the keys step. `Part::ArrowStart` / `ArrowEnd` are gone from `src/scrollbar.rs`; the geometry tests, `tests/ui_scrollbars.rs`, `tests/git_ui.rs` and the snapshots follow.
 - The scrollbars were too bulky (a two-column vertical bar and reverse-video block thumbs). They are now thin: the vertical bar is one column (`VERTICAL_WIDTH = 1`), and both bars are drawn with line glyphs: thumb `┃` / `━` in bold, track `│` / `─` dim, arrows as before. No reverse video, no background. Tests: `tests/ui_scrollbars.rs`, `tests/git_ui.rs`; snapshots regenerated.
 - `kuro git` diffs now mark **what changed inside a line**: for each removed line followed by an added line, the words that differ are drawn in reverse video (in the
   line's colour, no background) on both, down to the digits (`20260710` → `20260721` marks `10` and `21`). Lines with no word in common and lines that are only added or

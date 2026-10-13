@@ -48,8 +48,8 @@ fn hidden_when_the_content_fits() {
 fn a_vertical_bar_appears_when_there_are_more_lines_than_rows_and_goes_away_again() {
     let (mut a, _) = app_with(&lines(100));
     let buf = render(&mut a);
-    assert_eq!(buf[(W - 1, 0)].symbol(), "▲");
-    assert_eq!(buf[(W - 1, 21)].symbol(), "▼");
+    assert_eq!(buf[(W - 1, 0)].symbol(), "┃", "the thumb starts at the very top: there is no arrow button");
+    assert_eq!(buf[(W - 1, 21)].symbol(), "│", "and the track runs to the very bottom");
     assert_eq!(buf[(W - 1, 10)].symbol(), "│", "track");
     // delete almost everything: it fits again and the bar is gone
     a.buffer.remove(0..a.buffer.len_chars() - 5);
@@ -59,21 +59,21 @@ fn a_vertical_bar_appears_when_there_are_more_lines_than_rows_and_goes_away_agai
 
 #[test]
 fn thumb_size_and_position_follow_the_content_and_the_viewport() {
-    // 80x24: 22 text rows, so a 22-cell bar with 20 track cells; 100 lines -> thumb ceil(20 * 22 / 100) = 5 cells
+    // 80x24: 22 text rows, so a 22-cell bar, all of it track; 100 lines -> thumb ceil(22 * 22 / 100) = 5 cells
     let (mut a, _) = app_with(&lines(100));
     let buf = render(&mut a);
-    assert_eq!(vthumb(&buf, W - 1, 22), vec![1, 2, 3, 4, 5], "thumb at the top, right under the arrow");
+    assert_eq!(vthumb(&buf, W - 1, 22), vec![0, 1, 2, 3, 4], "thumb at the very top");
     // scrolled to the end: the thumb touches the bottom of the track
     a.top_line = 79; // 101 lines (the text ends in a newline) minus 22 rows
     a.follow = false;
     let buf = render(&mut a);
-    assert_eq!(vthumb(&buf, W - 1, 22), vec![16, 17, 18, 19, 20]);
+    assert_eq!(vthumb(&buf, W - 1, 22), vec![17, 18, 19, 20, 21]);
     // halfway
     a.top_line = 39;
     let buf = render(&mut a);
     let t = vthumb(&buf, W - 1, 22);
     assert_eq!(t.len(), 5);
-    assert!((8..=10).contains(&t[0]), "middle of the track: {t:?}");
+    assert!((7..=10).contains(&t[0]), "middle of the track: {t:?}");
     // a longer file gives a smaller thumb
     let (mut b, _) = app_with(&lines(1000));
     let buf = render(&mut b);
@@ -87,19 +87,18 @@ fn the_horizontal_bar_has_its_own_geometry() {
     let gw = gutter_w(&a);
     // the bar sits on the last text row, after the gutter, and is as wide as the text
     let y = 21; // 22 editor rows: the bottom one
-    assert_eq!(buf[(gw, y)].symbol(), "◀");
-    assert_eq!(buf[(W - 1, y)].symbol(), "▶");
+    assert!(["━", "─"].contains(&buf[(gw, y)].symbol()) && ["━", "─"].contains(&buf[(W - 1, y)].symbol()), "line glyphs from end to end");
     let avail = (W - gw) as usize;
-    let track = avail - 2;
+    let track = avail;
     let thumb = hthumb(&buf, y, gw, W);
     assert_eq!(thumb.len(), (track * avail).div_ceil(200), "visible fraction of the longest line");
-    assert_eq!(thumb[0], gw + 1, "at the start");
+    assert_eq!(thumb[0], gw, "at the start");
     // scrolled to the end
     a.left_col = 200 - avail;
     a.follow = false;
     let buf = render(&mut a);
     let thumb = hthumb(&buf, y, gw, W);
-    assert_eq!(*thumb.last().unwrap(), W - 2, "the thumb touches the right arrow");
+    assert_eq!(*thumb.last().unwrap(), W - 1, "the thumb touches the right end");
 }
 
 #[test]
@@ -118,20 +117,20 @@ fn both_bars_share_the_corner_and_shrink_the_text_area() {
 }
 
 #[test]
-fn clicking_the_arrows_steps_one_line_or_column() {
+fn there_are_no_arrow_buttons_the_ends_of_the_bar_page_like_the_rest_of_the_track() {
     let (mut a, _) = app_with(&lines(100));
     render(&mut a);
-    click_at(&mut a, W - 1, 21); // down arrow
-    assert_eq!(a.top_line, 1);
-    click_at(&mut a, W - 1, 21);
-    assert_eq!(a.top_line, 2);
-    click_at(&mut a, W - 1, 0); // up arrow
-    assert_eq!(a.top_line, 1);
+    click_at(&mut a, W - 1, 21); // the last cell of the bar: track below the thumb, a page (rows - 1), not one line
+    assert_eq!(a.top_line, 21);
+    render(&mut a);
+    click_at(&mut a, W - 1, 0); // the first cell: track above the thumb now
+    assert_eq!(a.top_line, 0);
     let (mut b, _) = app_with(&wide(200));
     render(&mut b);
     let gw = gutter_w(&b);
     click_at(&mut b, W - 1, 21);
-    assert_eq!(b.left_col, 1);
+    assert!(b.left_col > 1, "a page to the right, not one column: {}", b.left_col);
+    render(&mut b);
     click_at(&mut b, gw, 21);
     assert_eq!(b.left_col, 0);
 }
@@ -219,25 +218,25 @@ fn grabbing_the_thumb_in_the_middle_does_not_make_it_jump() {
 fn keyboard_navigation_keeps_the_bar_in_sync() {
     let (mut a, _) = modeless(&lines(100));
     let buf = render(&mut a);
-    assert_eq!(vthumb(&buf, W - 1, 22)[0], 1);
+    assert_eq!(vthumb(&buf, W - 1, 22)[0], 0);
     press(&mut a, "ctrl+end");
     let buf = render(&mut a);
     let t = vthumb(&buf, W - 1, 22);
-    assert_eq!(*t.last().unwrap(), 20, "at the bottom after Ctrl+End");
+    assert_eq!(*t.last().unwrap(), 21, "at the bottom after Ctrl+End");
     press(&mut a, "ctrl+home");
     let buf = render(&mut a);
-    assert_eq!(vthumb(&buf, W - 1, 22)[0], 1);
+    assert_eq!(vthumb(&buf, W - 1, 22)[0], 0);
     // typing and the wheel too
     mouse(&mut a, MouseEventKind::ScrollDown, 10, 5);
     let buf = render(&mut a);
-    assert!(vthumb(&buf, W - 1, 22)[0] >= 1);
+    assert!(vthumb(&buf, W - 1, 22)[0] >= 1, "the thumb moved down");
     // horizontally: End on a long line
     let (mut b, _) = modeless(&wide(300));
     render(&mut b);
     press(&mut b, "end");
     let buf = render(&mut b);
     let gw = gutter_w(&b);
-    assert_eq!(*hthumb(&buf, 21, gw, W).last().unwrap(), W - 2);
+    assert_eq!(*hthumb(&buf, 21, gw, W).last().unwrap(), W - 1);
 }
 
 #[test]
@@ -253,12 +252,12 @@ fn it_works_in_insert_mode_and_not_when_mouse_support_is_off() {
     let (mut a, _) = modeless(&lines(100));
     render(&mut a);
     click_at(&mut a, W - 1, 21);
-    assert_eq!(a.top_line, 1);
+    assert_eq!(a.top_line, 21, "a page");
     let mut cfg = Config::default();
     cfg.editor.mouse = false;
     let (mut b, _) = app_cfg(&lines(100), cfg);
     let buf = render(&mut b);
-    assert_eq!(buf[(W - 1, 0)].symbol(), "▲", "still drawn");
+    assert_eq!(buf[(W - 1, 0)].symbol(), "┃", "still drawn");
     click_at(&mut b, W - 1, 21);
     assert_eq!(b.top_line, 0, "but the mouse is off");
 }

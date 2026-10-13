@@ -253,7 +253,7 @@ since kuro's startup check is the authority. Without the protocol:
 | `Click` | Place the cursor |
 | `Drag` | Select up to the nearest character boundary: past the end of a line selects through its trailing spaces and tabs, and the right half of a tab or wide character includes it |
 | `Ctrl+right-click` | On spaces/tabs: move the cursor to the end of that whitespace run; elsewhere: place the cursor |
-| `Click / drag a scrollbar` | Arrow: step one line or column; track: page; thumb: drag to scroll (bars hide when the text fits; `editor.scrollbars`) |
+| `Click / drag a scrollbar` | Track: page; thumb: drag to scroll (there are no arrow buttons: use the wheel or the keys to step) (bars hide when the text fits; `editor.scrollbars`) |
 | `Double-click` | Select the word |
 | `Triple-click` | Select the line |
 | `Click the line number` | Select the whole line |

@@ -190,7 +190,7 @@ pub const BINDINGS: &[Binding] = &[
         "m_scrollbar",
         "Click / drag a scrollbar",
         "Mouse",
-        "Arrow: step one line or column; track: page; thumb: drag to scroll (bars hide when the text fits; `editor.scrollbars`)",
+        "Track: page; thumb: drag to scroll (there are no arrow buttons: use the wheel or the keys to step) (bars hide when the text fits; `editor.scrollbars`)",
     ),
     b("m_double", "Double-click", "Mouse", "Select the word"),
     b("m_triple", "Triple-click", "Mouse", "Select the line"),

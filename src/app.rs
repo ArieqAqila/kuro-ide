@@ -3074,8 +3074,6 @@ impl App {
             let pos = if vertical { (y - r.y) as usize } else { (x - r.x) as usize };
             let page = (b.len.min(if vertical { l.text.height } else { r.width } as usize).max(2) - 1) as isize;
             match b.part_at(pos) {
-                Part::ArrowStart => self.scroll_bar_by(vertical, -1),
-                Part::ArrowEnd => self.scroll_bar_by(vertical, 1),
                 Part::BeforeThumb => self.scroll_bar_by(vertical, -page),
                 Part::AfterThumb => self.scroll_bar_by(vertical, page),
                 Part::Thumb { grab } => {
