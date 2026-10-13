@@ -578,17 +578,20 @@ pub fn rows_text(buf: &Cells) -> Vec<String> {
 pub(crate) fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, vertical: bool) {
     let thumb = bar.thumb_cells();
     for i in 0..bar.len {
-        let (x, y) = if vertical { (r.x, r.y + i as u16) } else { (r.x + i as u16, r.y) };
-        let (sym, style) = if bar.arrows && i == 0 {
-            (if vertical { "▲" } else { "◀" }, Style::default())
-        } else if bar.arrows && i + 1 == bar.len {
-            (if vertical { "▼" } else { "▶" }, Style::default())
-        } else if thumb.contains(&i) {
-            (" ", Style::default().add_modifier(Modifier::REVERSED))
-        } else {
-            (if vertical { "│" } else { "─" }, dim())
-        };
-        buf.set_string(x, y, sym, style);
+        // a vertical bar is several columns wide: the same symbol across the width, the track line only in the first column
+        for c in 0..if vertical { r.width } else { 1 } {
+            let (x, y) = if vertical { (r.x + c, r.y + i as u16) } else { (r.x + i as u16, r.y) };
+            let (sym, style) = if bar.arrows && i == 0 {
+                (if vertical { "▲" } else { "◀" }, Style::default())
+            } else if bar.arrows && i + 1 == bar.len {
+                (if vertical { "▼" } else { "▶" }, Style::default())
+            } else if thumb.contains(&i) {
+                (" ", Style::default().add_modifier(Modifier::REVERSED))
+            } else {
+                (if vertical { if c == 0 { "│" } else { " " } } else { "─" }, dim())
+            };
+            buf.set_string(x, y, sym, style);
+        }
     }
 }
 

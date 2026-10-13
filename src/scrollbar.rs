@@ -4,6 +4,10 @@
 //! and the cells between them are the *track* with a *thumb* whose length is the visible fraction of the content.
 //! Everything is in cells, so the same code serves the vertical and the horizontal bar.
 
+/// Columns the vertical bar is wide. A terminal cell is about twice as tall as it is wide, so two columns look as thick
+/// as the one-row horizontal bar.
+pub const VERTICAL_WIDTH: u16 = 2;
+
 /// Where a point on a bar is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {

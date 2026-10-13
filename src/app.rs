@@ -9,6 +9,7 @@ use crate::findbar::{self, FindBar, TextField, contains};
 use crate::indent::{self, Indent};
 use crate::keyspec::{self, Chord};
 use crate::picker::{self, Picker, PickerItem, PickerKind};
+use crate::scrollbar::VERTICAL_WIDTH;
 use crate::secret::{CacheKey, PasswordCache, Secret};
 use crate::sql::{self, DbError, ResultSet, Session, profile, stmt};
 use crate::suggest::{self, Suggestions};
@@ -533,8 +534,8 @@ impl App {
         let (mut v, mut h) = (false, false);
         for _ in 0..3 {
             let rows = editor.height.saturating_sub(h as u16) as usize;
-            let cols = editor.width.saturating_sub(v as u16 + gutter_w) as usize;
-            let nv = editor.width > gutter_w + 2 && rows > 0 && lines > rows;
+            let cols = editor.width.saturating_sub(v as u16 * VERTICAL_WIDTH + gutter_w) as usize;
+            let nv = editor.width > gutter_w + VERTICAL_WIDTH + 1 && rows > 0 && lines > rows;
             let nh = editor.height > 2 && cols > 0 && widest > cols;
             if (nv, nh) == (v, h) {
                 break;
@@ -542,10 +543,10 @@ impl App {
             (v, h) = (nv, nh);
         }
         // a bar needs room for itself and a sliver of text
-        let v = v && editor.width > gutter_w + 2;
+        let v = v && editor.width > gutter_w + VERTICAL_WIDTH + 1;
         let h = h && editor.height > 2;
-        let text = Rect::new(editor.x, editor.y, editor.width - v as u16, editor.height - h as u16);
-        let vbar = v.then(|| Rect::new(text.right(), editor.y, 1, text.height));
+        let text = Rect::new(editor.x, editor.y, editor.width - v as u16 * VERTICAL_WIDTH, editor.height - h as u16);
+        let vbar = v.then(|| Rect::new(text.right(), editor.y, VERTICAL_WIDTH, text.height));
         let hbar = h.then(|| Rect::new(editor.x + gutter_w.min(text.width), text.bottom(), text.width.saturating_sub(gutter_w), 1));
         (text, vbar, hbar)
     }

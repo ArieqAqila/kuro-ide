@@ -62,18 +62,18 @@ pub fn layout(app: &GitApp, area: Rect) -> Layout {
     let (mut v, mut h) = (false, false);
     for _ in 0..3 {
         let rows = list_area.height.saturating_sub(h as u16) as usize;
-        let cols = list_area.width.saturating_sub(v as u16) as usize;
-        let nv = len > rows && list_area.width > 4 && rows > 0;
+        let cols = list_area.width.saturating_sub(v as u16 * scrollbar::VERTICAL_WIDTH) as usize;
+        let nv = len > rows && list_area.width > 4 + scrollbar::VERTICAL_WIDTH && rows > 0;
         let nh = app.view == View::Diff && widest > cols && list_area.height > 2;
         if (nv, nh) == (v, h) {
             break;
         }
         (v, h) = (nv, nh);
     }
-    let list = Rect::new(list_area.x, list_area.y, list_area.width - v as u16, list_area.height - h as u16);
+    let list = Rect::new(list_area.x, list_area.y, list_area.width - v as u16 * scrollbar::VERTICAL_WIDTH, list_area.height - h as u16);
     Layout {
         list,
-        vbar: v.then(|| Rect::new(list.right(), list.y, 1, list.height)),
+        vbar: v.then(|| Rect::new(list.right(), list.y, scrollbar::VERTICAL_WIDTH, list.height)),
         hbar: h.then(|| Rect::new(list.x, list.bottom(), list.width, 1)),
     }
 }

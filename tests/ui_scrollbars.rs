@@ -48,13 +48,16 @@ fn hidden_when_the_content_fits() {
 fn a_vertical_bar_appears_when_there_are_more_lines_than_rows_and_goes_away_again() {
     let (mut a, _) = app_with(&lines(100));
     let buf = render(&mut a);
-    assert_eq!(buf[(W - 1, 0)].symbol(), "▲");
-    assert_eq!(buf[(W - 1, 21)].symbol(), "▼");
-    assert_eq!(buf[(W - 1, 10)].symbol(), "│", "track");
+    for x in [W - 2, W - 1] {
+        assert_eq!(buf[(x, 0)].symbol(), "▲", "both columns of the bar carry the arrow");
+        assert_eq!(buf[(x, 21)].symbol(), "▼");
+    }
+    assert_eq!(buf[(W - 2, 10)].symbol(), "│", "track");
     // delete almost everything: it fits again and the bar is gone
     a.buffer.remove(0..a.buffer.len_chars() - 5);
     let buf = render(&mut a);
     assert_eq!(buf[(W - 1, 0)].symbol(), " ");
+    assert_eq!(buf[(W - 2, 0)].symbol(), " ");
 }
 
 #[test]
@@ -109,9 +112,11 @@ fn both_bars_share_the_corner_and_shrink_the_text_area() {
     render(&mut a);
     let l = a.layout(ratatui::layout::Rect::new(0, 0, W, H));
     let (v, h) = (l.vbar.unwrap(), l.hbar.unwrap());
-    assert_eq!((v.x, v.height), (W - 1, l.text.height));
+    // two columns wide: a cell is about twice as tall as wide, so this is as thick as the one-row horizontal bar
+    assert_eq!((v.x, v.width, v.height), (W - 2, kuro::scrollbar::VERTICAL_WIDTH, l.text.height));
+    assert_eq!(h.height, 1);
     assert_eq!(h.y, l.text.bottom());
-    assert_eq!(l.text.width, W - 1);
+    assert_eq!(l.text.width, W - 2);
     assert_eq!(l.text.height, 21);
     assert!(h.right() < W, "the horizontal bar stops before the vertical one");
 }
@@ -302,4 +307,19 @@ fn tiny_windows_do_not_panic() {
         mouse(&mut a, MouseEventKind::Up(MouseButton::Left), w.saturating_sub(1), h);
         render_size(&mut a, w, h);
     }
+}
+
+#[test]
+fn clicking_either_column_of_the_vertical_bar_works_and_the_thumb_is_two_columns_wide() {
+    let (mut a, _) = app_with(&lines(100));
+    let buf = render(&mut a);
+    let thumb_rows: Vec<u16> = (1..21).filter(|&y| buf[(W - 2, y)].modifier.contains(ratatui::style::Modifier::REVERSED)).collect();
+    assert!(!thumb_rows.is_empty());
+    for y in &thumb_rows {
+        assert!(buf[(W - 1, *y)].modifier.contains(ratatui::style::Modifier::REVERSED), "thumb fills both columns at row {y}");
+    }
+    click_at(&mut a, W - 2, 21);
+    assert_eq!(a.top_line, 1, "left column: down arrow");
+    click_at(&mut a, W - 1, 21);
+    assert_eq!(a.top_line, 2, "right column: down arrow");
 }

@@ -6,6 +6,11 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 
 ## [Unreleased]
 
+### Changed
+- The vertical scrollbar is now two columns wide (`scrollbar::VERTICAL_WIDTH`), in the editor and in `kuro git`: a terminal cell is about twice as tall as wide,
+  so one column looked half as thick as the one-row horizontal bar. Arrows and thumb fill both columns, the track line is drawn in the first; a click in either column
+  works. Snapshots `scrollbars_80x24`, `scrollbars_120x40` and `gutter_three_digits_end` were regenerated for it. Tests: `tests/ui_scrollbars.rs`.
+
 ### Added
 - Alt + vertical wheel scrolls sideways, like Shift + wheel, in the text and in the result table. Some terminals (foot among them) use Shift with the
   mouse to select text themselves and never send those events to kuro, so Shift+wheel cannot work there. Tests: `tests/ui_hscroll.rs`, `m_hwheel` in `tests/keybindings.rs`.

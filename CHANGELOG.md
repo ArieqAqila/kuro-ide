@@ -6,6 +6,9 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 
 ## [Unreleased]
 
+### Changed
+- The vertical scrollbar is two columns wide (also in `kuro git`), so it looks as thick as the horizontal one.
+
 ### Added
 - Alt + wheel scrolls sideways (in the text and in the result table), for terminals such as foot that keep Shift+wheel for their own text selection.
 
