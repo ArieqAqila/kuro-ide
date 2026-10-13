@@ -46,7 +46,7 @@ Locals and calcs are coloured only when the file really declares them (a name th
 
 ```toml
 [ext.ksystem]
-headers = ["/home/ksystem/*.h"]
+headers = ["/path/to/ksystem/*.h"]
 
 [ext.ksystem.colors]          # optional: your own slots (0-15, or -1 for the terminal's default text colour)
 local = 6

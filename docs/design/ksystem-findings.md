@@ -1,6 +1,6 @@
 # ksystem reference code: what I found
 
-Read-only study of `/home/ksystem/prtgitks` (nothing there was modified, copied or committed). It becomes the README of the ksystem
+Read-only study of `<the ksystem source tree>` (nothing there was modified, copied or committed). It becomes the README of the ksystem
 extension once the extension design is approved. Business names, people, hosts and field names from the reference are **not**
 reproduced here; the fixtures will be small anonymised excerpts.
 
@@ -59,7 +59,7 @@ A line-oriented, case-sensitive definition language. A file is a sequence of **s
 
 ## File fields (the C headers)
 
-`/home/ksystem/*.h` (139 files, 6.9 MB). Most are table definitions: `typedef struct alm { TEXT almdata[11]; LONG almprm; double almlat; … }`
+`/path/to/ksystem/*.h` (139 files, 6.9 MB). Most are table definitions: `typedef struct alm { TEXT almdata[11]; LONG almprm; double almlat; … }`
 (types `TEXT`, `LONG`, `double`, `COUNT`), one header per table, **every member prefixed with the file's name** (`alm.h` → `almdata`,
 `almnama`, …), plus a block of index names (`almprmidx`, …). `error.h` and `posting.h` are logs/text, not definitions. Fields appear in ksystem
 files as the first column of `FIELD(…)`/`MAP(…)` rows and in conditions, so they get a **third colour**; the index names

@@ -6,7 +6,7 @@ use super::store::{self, ExtPaths, Status};
 pub const USAGE: &str = "usage:
     kuro ext install SOURCE [--force] [--yes]   install an extension; SOURCE is one of
         DIR                  a folder containing kuro-ext.toml
-        NAME                 an extension of the registry (default https://github.com/ArieqAqila/kuro-extensions; KURO_EXT_REGISTRY)
+        NAME                 an extension of the registry named by KURO_EXT_REGISTRY (a git repository with one folder per extension)
         URL or URL@REF       a git repository (https, ssh, git or file URL) holding kuro-ext.toml; REF is a branch, tag or commit
       A download shows what it is and asks first (--yes skips the question); nothing from it is ever executed.
     kuro ext remove NAME             remove an installed extension

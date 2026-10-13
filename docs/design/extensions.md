@@ -26,13 +26,13 @@ Status: **proposed, waiting for approval.** Nothing is implemented yet.
    would clone or unpack). Archives (`.tar.gz`) and URLs add dependencies and a trust question, so I would leave them for
    later; say if you need them now.
 4. **How does the ksystem extension get detected?** I have not read the reference code yet (the sandbox that runs my commands
-   refused to read `/home/ksystem/prtgitks` file contents: *"PII data handling"*). Its files use ordinary extensions
+   refused to read `<the ksystem source tree>` file contents: *"PII data handling"*). Its files use ordinary extensions
    (`.html`, `.htm`, `.xml`, `.txt`, `.var`, …), so an extension rule has to be able to say **"this `.html` is ksystem"**.
    Proposal: a language may list `extensions`, `filenames`, `shebangs` **and** `first_line_regex` / `contains` markers (a
    small number of leading lines are checked), plus optional `path_globs`; the order is: exact file names, then extension
    markers (content sniff), then extension file types, then core file types. **I need you to either allow me to read that
    directory (a permission rule for `Read`/`Bash` on it) or give me anonymised samples**; the fixtures in `tests/fixtures/`
-   will be small anonymised excerpts either way, and nothing under `/home/ksystem` is ever modified or copied into the repo.
+   will be small anonymised excerpts either way, and nothing under the ksystem tree is ever modified or copied into the repo.
 
 ## Manifest
 
@@ -152,13 +152,13 @@ pty test feeds it an emulated palette.
 
 ## Names from the user's own files (`names_from`)
 
-ksystem file fields are defined in C headers (`/home/ksystem/*.h`, ≈140 files, ≈5 000 members, e.g. `TEXT almnama[51];`). Shipping that list
+ksystem file fields are defined in C headers (`/path/to/ksystem/*.h`, ≈140 files, ≈5 000 members, e.g. `TEXT almnama[51];`). Shipping that list
 would copy their schema into our repository, so the extension instead lets **the user** point kuro at the files:
 
 ```toml
 # ~/.config/kuro/config.toml
 [ext.ksystem]
-headers = ["/home/ksystem/*.h"]
+headers = ["/path/to/ksystem/*.h"]
 ```
 
 The extension may only *declare* that it wants names from a setting and which **built-in parser** reads them (`c-struct-members`:
@@ -169,7 +169,7 @@ file size and modification time and read lazily the first time a ksystem file is
 
 ## The ksystem language (after approval)
 
-1. Study `/home/ksystem/prtgitks` (read-only): which of `.html`, `.htm`, `.rptdesign`, `.xml`, `.txt`, `.var` and the extension-less
+1. Study `<the ksystem source tree>` (read-only): which of `.html`, `.htm`, `.rptdesign`, `.xml`, `.txt`, `.var` and the extension-less
    directories (`buat_git`, `coba123`, `debug2`, `html`, `scan`) use which syntax; find the keywords, directives, operators,
    comments and strings.
 2. Record the findings in `extensions/ksystem/README.md` (file type → syntax), then write the rules.

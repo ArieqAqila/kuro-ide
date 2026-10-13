@@ -275,7 +275,7 @@ Per-extension settings, one table per installed extension (see [EXTENSIONS.md](E
 
 ```toml
 [ext.ksystem]
-headers = ["/home/ksystem/*.h"]    # files the extension reads names from (here: the table headers)
+headers = ["/path/to/ksystem/*.h"]    # files the extension reads names from (here: the table headers)
 
 [ext.ksystem.colors]               # role = palette slot 0-15, or -1 for the terminal's default text colour
 local = 6
@@ -430,7 +430,7 @@ you connect). A literal password is rejected with an error.
 | Variable | Purpose |
 |---|---|
 | `KURO_CONFIG_DIR` | Directory holding `config.toml` and `connections.toml` (overrides `~/.config/kuro`). |
-| `KURO_EXT_REGISTRY` | Git URL of the extension registry used by `kuro ext install NAME` (default `https://github.com/ArieqAqila/kuro-extensions`; see [EXTENSIONS.md](EXTENSIONS.md)). |
+| `KURO_EXT_REGISTRY` | Git URL of an extension registry (a repository with one folder per extension), used by `kuro ext install NAME`. Not set by default: install from the extension's own git URL (see [EXTENSIONS.md](EXTENSIONS.md)). |
 
 Test-only variables (`KURO_REQUIRE_DOCKER`, `KURO_RECORD_FIXTURES`) are described in the README.
 

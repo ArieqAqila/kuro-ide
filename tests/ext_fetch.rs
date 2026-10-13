@@ -256,3 +256,16 @@ fn the_downloaded_files_are_deleted_when_the_download_is_dropped() {
     drop(fetched);
     assert!(!dir.exists(), "the temporary copy is gone");
 }
+
+#[test]
+fn a_bare_name_without_a_registry_says_what_to_do_instead() {
+    let e = env();
+    let out = e.run(&["install", "ksystem", "--yes"], fetch::DEFAULT_REGISTRY, false, &none());
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stderr.contains("no extension registry is set") && out.stderr.contains("git URL") && out.stderr.contains("KURO_EXT_REGISTRY"),
+        "{}",
+        out.stderr
+    );
+    assert!(e.installed().is_empty());
+}

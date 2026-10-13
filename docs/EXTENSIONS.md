@@ -4,8 +4,8 @@ kuro has an **optional** extension system. For now an extension is **data only**
 detection and colouring). kuro never runs anything from an extension, and extensions are not installed by default.
 
 ```fish
-kuro ext install ksystem                          # by name, from the extension registry
-kuro ext install https://github.com/you/ext@v1.0  # from any git repository (URL, or URL@branch / tag / commit)
+kuro ext install https://github.com/ArieqAqila/ksystem-kuro-ext   # from a git repository (URL, or URL@branch / tag / commit)
+kuro ext install ksystem                          # by name, from a registry you set with KURO_EXT_REGISTRY (optional)
 kuro ext install ./my-extension                   # from a folder
 kuro ext list                                     # name, version, languages, status, where it came from
 kuro ext remove ksystem                           # delete it
@@ -17,15 +17,15 @@ kuro ext remove ksystem                           # delete it
 
 | `SOURCE` | Meaning |
 |---|---|
-| `NAME` (lower-case letters, digits, `-`) | The folder `NAME/` of the **registry**, a git repository with one folder per extension: `https://github.com/ArieqAqila/kuro-extensions`. Another registry: `set -x KURO_EXT_REGISTRY https://…` |
 | `URL` or `URL@REF` | A git repository (https, http, ssh, git or file URL, or `git@host:path`) with `kuro-ext.toml` at its root. `REF` is a branch, tag or commit |
 | a folder | A folder of your own. If a folder exists with that name it wins over a registry name |
+| `NAME` (lower-case letters, digits, `-`) | The folder `NAME/` of a **registry** you chose: a git repository with one folder per extension, set with `set -x KURO_EXT_REGISTRY https://…`. There is no default registry |
 
 kuro needs the `git` command for the first two. It downloads **one commit, without history**, into a temporary folder, unpacks only the tracked files (no `.git`, no hooks),
 and deletes the folder afterwards. **Before it installs a download it shows what it is and asks**:
 
 ```text
-install `ksystem` 0.1.0 (languages: ksystem) from https://github.com/ArieqAqila/kuro-extensions (ksystem)? [y/N]
+install `ksystem` 0.1.0 (languages: ksystem) from https://github.com/ArieqAqila/ksystem-kuro-ext? [y/N]
 ```
 
 `--yes` skips the question (and is required without a terminal, e.g. in a script); `--force` replaces an installed extension. A download then goes through exactly the checks
@@ -114,7 +114,7 @@ Some languages refer to names defined elsewhere (ksystem fields are defined in C
 ```toml
 # ~/.config/kuro/config.toml
 [ext.ksystem]
-headers = ["/home/ksystem/*.h"]
+headers = ["/path/to/ksystem/*.h"]
 ```
 
 Readers: `c-struct-members` (`TYPE name;` / `TYPE name[N];` inside `typedef struct { … }`), `c-negative-defines` (`#define name -1601`).
@@ -142,5 +142,5 @@ a pattern that matches nothing is a `:warnings` entry. The files are read the fi
 
 ## The ksystem extension
 
-`ksystem/` in the extension registry (see its README for what the language looks like and which files use it): `kuro ext install ksystem`, then open a
+The `ksystem-kuro-ext` repository (see its README for what the language looks like and which files use it): `kuro ext install https://github.com/ArieqAqila/ksystem-kuro-ext`, then open a
 `sct<N>` or `tmp_*` file, or `:setlang ksystem`.

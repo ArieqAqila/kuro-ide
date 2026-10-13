@@ -5,8 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Where bare names are looked up unless `KURO_EXT_REGISTRY` says otherwise.
-pub const DEFAULT_REGISTRY: &str = "https://github.com/ArieqAqila/kuro-extensions";
+/// Where bare names are looked up unless `KURO_EXT_REGISTRY` says otherwise: nowhere (extensions are installed from their own git URL).
+pub const DEFAULT_REGISTRY: &str = "";
 
 /// What an `install` argument means.
 #[derive(Debug, PartialEq, Eq)]
@@ -159,6 +159,11 @@ pub fn fetch(source: &Source, registry: &str) -> Result<Option<Fetched>, String>
         Source::Dir(_) => Ok(None),
         Source::Git { url, reference } => download(url, reference.as_deref(), None).map(Some),
         Source::Named(name) => {
+            if registry.is_empty() {
+                return Err(format!(
+                    "`{name}` is not a folder, and no extension registry is set: install from a git URL (`kuro ext install https://…`) or set KURO_EXT_REGISTRY"
+                ));
+            }
             check_url(registry).map_err(|e| format!("the extension registry: {e}"))?;
             download(registry, None, Some(name)).map(Some)
         }
