@@ -47,6 +47,10 @@ shows, for every key and mouse event, the bytes your terminal sent and what kuro
 wheel over it, also with Shift, Alt and Ctrl held, then quit with Ctrl+C. Nothing printed for an event means the terminal does not pass it on to programs (many
 terminals keep Shift+mouse for their own text selection, which is why Alt+wheel exists); `ScrollDown` printed but no scrolling in the editor would be a kuro bug.
 
+**PageUp / PageDown never arrive in foot** when its config binds them (`scrollback-up-page=Page_Up`, `scrollback-down-page=Page_Down` in `~/.config/foot/foot.ini`):
+foot keeps those keys for its own scrollback, which is empty inside a full-screen program, so nothing happens. Remove or rebind them (for example to `Shift+Page_Up`).
+In `kuro git` you can page with `Space` / `b`, `Ctrl+F` / `Ctrl+B` and half pages with `Ctrl+D` / `Ctrl+U`, which every terminal passes on.
+
 ## Which terminals can send Ctrl+Enter
 
 Most terminals send the very same byte for **Enter** and **Ctrl+Enter** (a carriage return), so no program can tell

@@ -23,6 +23,8 @@ pub const KEYS: &[(&str, &str, &str)] = &[
     ("Everywhere", "Esc Backspace", "Go back one view"),
     ("Lists", "↑ ↓ k j", "Move the selection"),
     ("Lists", "PageUp PageDown", "Move a page"),
+    ("Lists", "b Space Ctrl+B Ctrl+F", "Move a page up / down (for terminals that keep PageUp / PageDown for themselves)"),
+    ("Lists", "Ctrl+U Ctrl+D", "Move half a page up / down"),
     ("Lists", "Home End g G", "First / last row"),
     ("Tree", "Enter →", "Open a folder (or fold it); on a file: show that file's history"),
     ("Tree", "a Tab", "History of the whole repository"),
@@ -34,6 +36,7 @@ pub const KEYS: &[(&str, &str, &str)] = &[
     ("Commit", "o", "Open the selected file as it was at this commit (read-only)"),
     ("Commit", "n p", "Next older / newer commit"),
     ("Diff", "↑ ↓ PageUp PageDown Home End", "Scroll"),
+    ("Diff", "b Space Ctrl+B Ctrl+F Ctrl+U Ctrl+D", "Scroll a page or half a page, like less"),
     ("Diff", "← → h l", "Scroll sideways"),
     ("Diff", "n p", "Next older / newer commit, same file if it is there"),
     ("Diff", "o", "Open the file at this commit (read-only)"),
@@ -529,7 +532,7 @@ impl GitApp {
         }
     }
 
-    fn list_height(&self) -> usize {
+    pub fn list_height(&self) -> usize {
         (ui::layout(self, self.area).list.height as usize).max(1)
     }
 
@@ -623,6 +626,24 @@ impl GitApp {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let page = self.list_height().saturating_sub(1).max(1) as isize;
         self.msg.clear();
+        // paging keys, also the `less` ones: some terminals (foot with `scrollback-up-page=Page_Up`, for one) keep PageUp / PageDown
+        // for their own scrollback and never pass them on
+        let paging = match (k.code, ctrl) {
+            (KeyCode::PageDown, _) | (KeyCode::Char(' '), false) | (KeyCode::Char('f'), true) => Some(page),
+            (KeyCode::PageUp, _) | (KeyCode::Char('b'), _) => Some(-page),
+            (KeyCode::Char('d'), true) => Some((page / 2).max(1)),
+            (KeyCode::Char('u'), true) => Some(-(page / 2).max(1)),
+            _ => None,
+        };
+        if let Some(d) = paging {
+            if self.view == View::Diff {
+                let max_top = self.diff.len().saturating_sub(self.list_height());
+                self.diff_top = (self.diff_top as isize + d).clamp(0, max_top as isize) as usize;
+            } else {
+                self.move_selection(d);
+            }
+            return;
+        }
         match k.code {
             KeyCode::Char('q') if !ctrl => self.quit = true,
             KeyCode::Char('q') | KeyCode::Char('Q') if ctrl => self.quit = true,
@@ -633,8 +654,6 @@ impl GitApp {
             _ if self.view == View::Diff => self.diff_key(k),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
-            KeyCode::PageUp => self.move_selection(-page),
-            KeyCode::PageDown => self.move_selection(page),
             KeyCode::Home | KeyCode::Char('g') => self.move_selection(isize::MIN / 2),
             KeyCode::End | KeyCode::Char('G') => self.move_selection(isize::MAX / 2),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_selected(),
@@ -661,12 +680,9 @@ impl GitApp {
     fn diff_key(&mut self, k: KeyEvent) {
         let h = self.list_height();
         let max_top = self.diff.len().saturating_sub(h);
-        let page = h.saturating_sub(1).max(1);
         match k.code {
             KeyCode::Up | KeyCode::Char('k') => self.diff_top = self.diff_top.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => self.diff_top = (self.diff_top + 1).min(max_top),
-            KeyCode::PageUp => self.diff_top = self.diff_top.saturating_sub(page),
-            KeyCode::PageDown => self.diff_top = (self.diff_top + page).min(max_top),
             KeyCode::Home | KeyCode::Char('g') => self.diff_top = 0,
             KeyCode::End | KeyCode::Char('G') => self.diff_top = max_top,
             KeyCode::Left | KeyCode::Char('h') => self.diff_left = self.diff_left.saturating_sub(8),

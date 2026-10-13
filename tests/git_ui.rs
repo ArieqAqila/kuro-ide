@@ -611,6 +611,63 @@ pub mod pointer {
         assert!(b.msg.contains("no history for untracked.txt"), "{}", b.msg);
     }
 }
+mod paging_keys {
+    use super::*;
+
+    #[test]
+    fn space_b_and_the_ctrl_keys_page_lists_and_diffs_for_terminals_that_keep_page_up_and_down() {
+        let mut r = Repo::new();
+        r.many_commits(120);
+        let mut a = app(&r, None);
+        press(&mut a, "a");
+        draw(&mut a);
+        let page = a.list_height() - 1;
+        assert_eq!(a.history.sel, 0);
+        press(&mut a, "Space");
+        assert_eq!(a.history.sel, page, "Space = PageDown");
+        press(&mut a, "ctrl+f");
+        assert_eq!(a.history.sel, 2 * page);
+        press(&mut a, "b");
+        assert_eq!(a.history.sel, page, "b = PageUp");
+        press(&mut a, "ctrl+b");
+        assert_eq!(a.history.sel, 0);
+        press(&mut a, "ctrl+d");
+        assert_eq!(a.history.sel, page / 2, "Ctrl+D = half a page down");
+        press(&mut a, "ctrl+u");
+        assert_eq!(a.history.sel, 0);
+        press(&mut a, "PageDown");
+        assert_eq!(a.history.sel, page, "PageDown still works");
+        // Ctrl+D does not open a diff (plain d does)
+        assert_eq!(a.view, View::History);
+    }
+
+    #[test]
+    fn the_same_keys_scroll_a_diff() {
+        let mut r = Repo::new();
+        r.write("big.txt", &lines(300, "big"));
+        r.commit("big file");
+        let mut a = app(&r, None);
+        to_whole_diff(&mut a, 0);
+        draw(&mut a);
+        assert_eq!(a.view, View::Diff);
+        let page = a.list_height() - 1;
+        press(&mut a, "Space");
+        assert_eq!(a.diff_top, page);
+        press(&mut a, "ctrl+d");
+        assert_eq!(a.diff_top, page + page / 2);
+        press(&mut a, "b");
+        assert_eq!(a.diff_top, page / 2);
+        press(&mut a, "ctrl+u");
+        assert_eq!(a.diff_top, 0);
+        press(&mut a, "b");
+        assert_eq!(a.diff_top, 0, "clamped at the top");
+        for _ in 0..40 {
+            press(&mut a, "ctrl+f");
+        }
+        assert_eq!(a.diff_top, a.diff.len() - a.list_height(), "clamped at the end");
+    }
+}
+
 mod inline_marks {
     use super::*;
 

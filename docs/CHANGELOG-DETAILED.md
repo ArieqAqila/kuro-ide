@@ -34,6 +34,8 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
   bar, the last row of a frame, was drawn. They now wait for the whole first frame.
 
 ### Added
+- `kuro git` paging keys that every terminal passes on: `Space` / `b`, `Ctrl+F` / `Ctrl+B` (a page) and `Ctrl+D` / `Ctrl+U` (half a page), in the lists and in the diff. Found while looking at
+  "scrolling does not work": a `foot.ini` with `scrollback-up-page=Page_Up` and `scrollback-down-page=Page_Down` makes foot swallow PageUp / PageDown. Documented in `docs/KEYBINDINGS.md`. Tests: `tests/git_ui.rs` (`paging_keys`).
 - `kuro --show-input` shows every key and mouse event as the terminal sent it (escaped bytes) and as kuro parsed it, until Ctrl+C. It is there for reports such as
   "the wheel does not scroll": it tells whether the terminal sends the event at all (with Shift / Alt / Ctrl too). Test: `tests/pty_showinput.rs`.
 - Alt + vertical wheel scrolls sideways, like Shift + wheel, in the text and in the result table. Some terminals (foot among them) use Shift with the

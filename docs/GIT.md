@@ -32,6 +32,8 @@ kuro git -fl src/app.rs     # the commit history of one file, renames followed
 | Everywhere | `Esc Backspace` | Go back one view |
 | Lists | `↑ ↓ k j` | Move the selection |
 | Lists | `PageUp PageDown` | Move a page |
+| Lists | `b Space Ctrl+B Ctrl+F` | Move a page up / down (for terminals that keep PageUp / PageDown for themselves) |
+| Lists | `Ctrl+U Ctrl+D` | Move half a page up / down |
 | Lists | `Home End g G` | First / last row |
 | Tree | `Enter →` | Open a folder (or fold it); on a file: show that file's history |
 | Tree | `a Tab` | History of the whole repository |
@@ -43,6 +45,7 @@ kuro git -fl src/app.rs     # the commit history of one file, renames followed
 | Commit | `o` | Open the selected file as it was at this commit (read-only) |
 | Commit | `n p` | Next older / newer commit |
 | Diff | `↑ ↓ PageUp PageDown Home End` | Scroll |
+| Diff | `b Space Ctrl+B Ctrl+F Ctrl+U Ctrl+D` | Scroll a page or half a page, like less |
 | Diff | `← → h l` | Scroll sideways |
 | Diff | `n p` | Next older / newer commit, same file if it is there |
 | Diff | `o` | Open the file at this commit (read-only) |
