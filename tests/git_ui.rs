@@ -318,7 +318,7 @@ mod diffs {
         let buf = draw(&mut a);
         assert_eq!(buf[(W - 1, 1)].symbol(), "▲");
         assert_eq!(buf[(W - 1, H - 2)].symbol(), "▼");
-        let thumb = |buf: &Cells| (1..H - 1).filter(|&y| buf[(W - 1, y)].modifier.contains(Modifier::REVERSED)).collect::<Vec<_>>();
+        let thumb = |buf: &Cells| (1..H - 1).filter(|&y| buf[(W - 1, y)].symbol() == "┃").collect::<Vec<_>>();
         let top = thumb(&buf);
         assert_eq!(top[0], 2, "the thumb starts right under the arrow");
         press(&mut a, "End");
@@ -540,7 +540,7 @@ pub mod pointer {
         assert_eq!(a.history.top, 27, "one page (rows - 1)");
         // drag the thumb to the bottom
         let buf = draw(&mut a);
-        let grab = (1..H - 1).find(|&y| buf[(x, y)].modifier.contains(Modifier::REVERSED)).expect("a thumb is drawn");
+        let grab = (1..H - 1).find(|&y| buf[(x, y)].symbol() == "┃").expect("a thumb is drawn");
         mouse_at(&mut a, MouseEventKind::Down(MouseButton::Left), x, grab);
         mouse_at(&mut a, MouseEventKind::Drag(MouseButton::Left), x, H - 3);
         assert!(a.history.top > 60, "{}", a.history.top);

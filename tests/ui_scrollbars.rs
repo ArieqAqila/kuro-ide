@@ -20,11 +20,11 @@ fn wide(cols: usize) -> String {
 
 /// (arrow-start glyph present, thumb cells, arrow-end glyph present) for the vertical bar at column `x`.
 fn vthumb(buf: &Cells, x: u16, rows: u16) -> Vec<u16> {
-    (0..rows).filter(|&y| buf[(x, y)].modifier.contains(Modifier::REVERSED)).collect()
+    (0..rows).filter(|&y| buf[(x, y)].symbol() == "┃").collect()
 }
 
 fn hthumb(buf: &Cells, y: u16, from: u16, to: u16) -> Vec<u16> {
-    (from..to).filter(|&x| buf[(x, y)].modifier.contains(Modifier::REVERSED)).collect()
+    (from..to).filter(|&x| buf[(x, y)].symbol() == "━").collect()
 }
 
 fn click_at(a: &mut App, x: u16, y: u16) {
@@ -48,16 +48,13 @@ fn hidden_when_the_content_fits() {
 fn a_vertical_bar_appears_when_there_are_more_lines_than_rows_and_goes_away_again() {
     let (mut a, _) = app_with(&lines(100));
     let buf = render(&mut a);
-    for x in [W - 2, W - 1] {
-        assert_eq!(buf[(x, 0)].symbol(), "▲", "both columns of the bar carry the arrow");
-        assert_eq!(buf[(x, 21)].symbol(), "▼");
-    }
-    assert_eq!(buf[(W - 2, 10)].symbol(), "│", "track");
+    assert_eq!(buf[(W - 1, 0)].symbol(), "▲");
+    assert_eq!(buf[(W - 1, 21)].symbol(), "▼");
+    assert_eq!(buf[(W - 1, 10)].symbol(), "│", "track");
     // delete almost everything: it fits again and the bar is gone
     a.buffer.remove(0..a.buffer.len_chars() - 5);
     let buf = render(&mut a);
     assert_eq!(buf[(W - 1, 0)].symbol(), " ");
-    assert_eq!(buf[(W - 2, 0)].symbol(), " ");
 }
 
 #[test]
@@ -112,11 +109,10 @@ fn both_bars_share_the_corner_and_shrink_the_text_area() {
     render(&mut a);
     let l = a.layout(ratatui::layout::Rect::new(0, 0, W, H));
     let (v, h) = (l.vbar.unwrap(), l.hbar.unwrap());
-    // two columns wide: a cell is about twice as tall as wide, so this is as thick as the one-row horizontal bar
-    assert_eq!((v.x, v.width, v.height), (W - 2, kuro::scrollbar::VERTICAL_WIDTH, l.text.height));
+    assert_eq!((v.x, v.width, v.height), (W - 1, kuro::scrollbar::VERTICAL_WIDTH, l.text.height));
     assert_eq!(h.height, 1);
     assert_eq!(h.y, l.text.bottom());
-    assert_eq!(l.text.width, W - 2);
+    assert_eq!(l.text.width, W - 1);
     assert_eq!(l.text.height, 21);
     assert!(h.right() < W, "the horizontal bar stops before the vertical one");
 }
@@ -290,11 +286,11 @@ fn colours_follow_the_terminal_theme_and_there_is_never_a_background() {
             assert!(!matches!(c.fg, Color::Rgb(..) | Color::Indexed(_)), "({x},{y}) {:?}", c.fg);
         }
     }
-    // thumb and track differ by reverse video and dim, not by colour
+    // thumb and track differ by glyph (heavy / light line), bold and dim, not by colour
     let thumb = &buf[(BIG - 1, 2)];
-    assert!(thumb.modifier.contains(Modifier::REVERSED));
+    assert!(thumb.symbol() == "┃" && thumb.modifier.contains(Modifier::BOLD));
     let track = &buf[(BIG - 1, 30)];
-    assert!(track.modifier.contains(Modifier::DIM) && !track.modifier.contains(Modifier::REVERSED));
+    assert!(track.symbol() == "│" && track.modifier.contains(Modifier::DIM) && !track.modifier.contains(Modifier::BOLD));
 }
 
 #[test]
@@ -310,16 +306,20 @@ fn tiny_windows_do_not_panic() {
 }
 
 #[test]
-fn clicking_either_column_of_the_vertical_bar_works_and_the_thumb_is_two_columns_wide() {
-    let (mut a, _) = app_with(&lines(100));
+fn the_bars_are_thin_one_column_and_one_row_of_line_glyphs_never_blocks() {
+    let text = format!("{}{}", lines(100), "z".repeat(150));
+    let (mut a, _) = app_with(&text);
     let buf = render(&mut a);
-    let thumb_rows: Vec<u16> = (1..21).filter(|&y| buf[(W - 2, y)].modifier.contains(ratatui::style::Modifier::REVERSED)).collect();
-    assert!(!thumb_rows.is_empty());
-    for y in &thumb_rows {
-        assert!(buf[(W - 1, *y)].modifier.contains(ratatui::style::Modifier::REVERSED), "thumb fills both columns at row {y}");
+    let l = a.layout(ratatui::layout::Rect::new(0, 0, W, H));
+    let (v, h) = (l.vbar.unwrap(), l.hbar.unwrap());
+    assert_eq!((v.width, h.height), (1, 1), "one cell thick each way");
+    assert_eq!(kuro::scrollbar::VERTICAL_WIDTH, 1);
+    for y in v.y..v.bottom() {
+        assert!(["▲", "▼", "│", "┃"].contains(&buf[(v.x, y)].symbol()), "{:?}", buf[(v.x, y)].symbol());
+        assert!(!buf[(v.x, y)].modifier.contains(Modifier::REVERSED), "no block in reverse video");
     }
-    click_at(&mut a, W - 2, 21);
-    assert_eq!(a.top_line, 1, "left column: down arrow");
-    click_at(&mut a, W - 1, 21);
-    assert_eq!(a.top_line, 2, "right column: down arrow");
+    for x in h.x..h.right() {
+        assert!(["◀", "▶", "─", "━"].contains(&buf[(x, h.y)].symbol()), "{:?}", buf[(x, h.y)].symbol());
+        assert!(!buf[(x, h.y)].modifier.contains(Modifier::REVERSED));
+    }
 }

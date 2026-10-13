@@ -586,9 +586,10 @@ pub(crate) fn draw_bar(buf: &mut Cells, r: Rect, bar: &crate::scrollbar::Bar, ve
             } else if bar.arrows && i + 1 == bar.len {
                 (if vertical { "▼" } else { "▶" }, Style::default())
             } else if thumb.contains(&i) {
-                (" ", Style::default().add_modifier(Modifier::REVERSED))
+                // a heavier line, not a block: the bar stays thin
+                (if vertical { "┃" } else { "━" }, Style::default().add_modifier(Modifier::BOLD))
             } else {
-                (if vertical { if c == 0 { "│" } else { " " } } else { "─" }, dim())
+                (if vertical { "│" } else { "─" }, dim())
             };
             buf.set_string(x, y, sym, style);
         }

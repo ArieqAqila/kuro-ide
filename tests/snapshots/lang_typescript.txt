@@ -12,7 +12,7 @@
 |                                                                |
 |                                                                |
 |                                                                |
-|   ◀                                                         ──▶|
+|   ◀━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──▶|
 |NORMAL  [No Name]           Ln 1, Col 1  │  TypeScript (manual) |
 |                                                                |
 == style ==
@@ -29,7 +29,7 @@
 |................................................................|
 |................................................................|
 |................................................................|
-|....RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRDD.|
+|....BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBDD.|
 |BBBBBB......................DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD.|
 |................................................................|
 == fg ==

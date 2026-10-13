@@ -13,7 +13,7 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 - `kuro git` outside a repository now prints `this directory is not in a git repository` (it was an Indonesian message, `direktori tidak ada git`); exit status 128 as before.
 
 ### Changed
-- The vertical scrollbar is two columns wide (also in `kuro git`), so it looks as thick as the horizontal one.
+- The scrollbars are thin: one column / one row of line glyphs (the thumb a heavier line `┃` / `━`, the track a light `│` / `─`), no more reverse-video blocks, also in `kuro git`.
 
 ### Added
 - Alt + wheel scrolls sideways (in the text and in the result table), for terminals such as foot that keep Shift+wheel for their own text selection.
