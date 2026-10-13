@@ -60,9 +60,14 @@ Diff colours are roles in `[colors]`, mapped to palette slots like every other c
 `diff_add` (default 2), `diff_del` (1), `diff_hunk` (6) and `diff_meta` (-1: file headers in bold default text). See [CUSTOMIZATION.md](CUSTOMIZATION.md).
 Everything else uses the default text colour, bold, dim and reverse video.
 
+**What changed inside a line** is marked too: when a removed line is followed by an added line (the first removed with the first added, and so on), the words that
+differ are drawn in **reverse video** on both lines, in the line's colour, so for `"20260710"` → `"20260721"` only the `10` and the `21` are reversed: you see where the change is, not only that the line differs.
+Whole new or whole removed lines, and pairs that share no word at all, are not marked (the line colour says it all). Never a background colour.
+
 ## How it uses git, and why
 
-kuro runs the **`git` command** (read-only subcommands only: `rev-parse`, `symbolic-ref`, `ls-tree`, `log`, `diff`, `show`, `hash-object`) rather than a library:
+kuro runs the **`git` command** (read-only subcommands only: `rev-parse`, `symbolic-ref`, `ls-tree`, `rev-list`, `log`, `diff`, `diff-tree`, `show`, `hash-object`; the one exception is
+`commit-graph write`, which writes only into kuro's own cache folder, see below) rather than a library:
 it gives exactly what your own git gives (your configuration, rename detection, worktrees, huge repositories), and it adds no dependency or C library to kuro.
 The cost is that `git` must be installed, and that output is parsed (with NUL-separated, machine-readable formats, so odd file names are safe).
 
@@ -71,24 +76,32 @@ call that produces a diff passes `--no-ext-diff --no-textconv`: **a repository c
 
 ## Speed on large repositories
 
-The history of **one file** is the slow part for git itself: it has to compare commits with their parents to find the ones that touched the file, and to
-follow renames it walks the whole history (about 14 seconds in a repository of 108,000 commits). kuro therefore **does not wait for git**: the history view opens
-at once (the header says `reading… N found so far`), and the commits are added to the list as git finds them, newest first, like `gitk` does. In that repository
-the first commit is on screen after about a second and all 51 after about 6; you can move around, open a commit or press `Esc` while git is still reading, and leaving
-the history for the tree stops git. `kuro git -fl FILE` opens straight into that view. (An unknown or deleted file is checked first, which for a file that was
-never there means one complete walk before kuro says `no history for …`.)
+Finding the commits that touched **one file** is the slow part for git itself: it compares commits with their parents (about 14 seconds with `git log --follow` in a
+repository of 108,000 commits). kuro is built around not waiting for that:
 
-To make git itself faster for the plain per-file log (5.6 s → 0.2 s on that repository) you can write a commit graph with changed-path filters, once, in your own
-repository (kuro never changes a repository):
+* **It does not use `--follow`.** It lists the commits of the path with `git log -- <path>` (which streams, and which a commit graph can speed up) and, where the
+  path was *added* in a commit, asks `git diff-tree -M` whether it was renamed from another path; if so the history continues from that commit's parent under the old
+  name, which is exactly where `--follow` switches too (a test compares the two on renames, chains, re-created files and merges).
+* **The view opens at once** and the commits are added as git prints them, newest first, like `gitk` (header: `reading… N found so far`). You can scroll, open a commit
+  or press `Esc` meanwhile; leaving the history for the tree stops git.
+* **A private commit graph.** For repositories with more than `git.graph_cache_min_commits` commits (default 5000) kuro builds, in the background, a commit graph
+  *with changed-path filters* in its own cache folder, `$XDG_CACHE_HOME/kuro/git/<id>/` (`~/.cache/kuro/git/…`): about 20 seconds of one CPU core and 7 MiB for 100,000
+  commits, rebuilt when it is a day old. It is **never inside the repository**: git is told to use that folder as its primary object folder with the repository's own
+  objects as an alternate (`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`), so nothing in the repository changes. Turn it off with `git.graph_cache = false`,
+  or delete the folder.
 
-```fish
-git commit-graph write --reachable --changed-paths
-git config fetch.writeCommitGraph true      # keep it up to date after fetches
-```
+Measured on the 108,000-commit repository, `kuro git -fl FILE` for a file with 51 commits:
 
-Following renames (`--follow`) does not use those filters, so git keeps walking after the last commit has been shown; the header says `reading…` until it is sure.
+| | first commit on screen | 41st commit |
+|---|---|---|
+| kuro 0.2.0 at first | after about 28 s | after about 28 s |
+| now, first time (no cache yet) | 0.9 s | 2.2 s |
+| now, with the cache | 0.14 s | 0.35 s |
 
-## Not covered
+You can give git the same speed-up for your own `git log -- file` by running `git commit-graph write --reachable --changed-paths` in the repository (that one *does* write
+into it).
+
+## Not covered## Not covered
 
 No staging, committing, checkout, blame or branch switching; merges are shown against their first parent only; very long diffs are not paged (they are read whole);
 and the terminal tests cannot show how a particular terminal draws the box characters of the scrollbars.

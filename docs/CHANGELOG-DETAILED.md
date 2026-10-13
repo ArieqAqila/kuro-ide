@@ -7,6 +7,18 @@ The full entry for every change. The short version is [CHANGELOG.md](../CHANGELO
 ## [Unreleased]
 
 ### Changed
+- `kuro git` diffs now mark **what changed inside a line**: for each removed line followed by an added line, the words that differ are drawn in reverse video (in the
+  line's colour, no background) on both, down to the digits (`20260710` → `20260721` marks `10` and `21`). Lines with no word in common and lines that are only added or
+  only removed are not marked. Words are compared with a longest-common-subsequence on words, white space and punctuation, then trimmed to the characters that
+  really differ; marks are kept in terminal cells, so they follow horizontal scrolling and wide characters. Tests: `src/gitview/inline.rs`, `tests/git_ui.rs` (`inline_marks`).
+- `kuro git` file history is much faster on big repositories (second round; the first one is below). It no longer runs `git log --follow`, which walks the whole history
+  and cannot use a commit graph: it lists `git log -- <path>` (streamed) and asks `git diff-tree -M` at every commit that *added* the path whether it was renamed from another
+  path, continuing from that commit's parent under the old name (where `--follow` switches too; `tests/git_cmd.rs` compares the two for renames, rename chains, a re-created
+  file, a rename plus an edit and a rename on a merged branch). New `[git]` options `graph_cache` (default on) and `graph_cache_min_commits` (5000): for a big repository kuro
+  builds, in the background, a commit graph with changed-path filters in `$XDG_CACHE_HOME/kuro/git/<id>/` (never in the repository: git gets that folder as its primary object
+  folder with the repository's objects as an alternate), rebuilt after a day, one builder at a time. Measured with a pty on the 108,000-commit repository: first commit after
+  0.9 s and the 41st after 2.2 s the first time, 0.14 s and 0.35 s with the cache (about 28 s before). Tests: `tests/git_cmd.rs` (cache built, repository untouched, lock,
+  small repositories, switched off).
 - `kuro git` was very slow when you opened a file's history on a large repository (a test repository of about 108,000 commits: roughly 28 seconds with a blank
   screen). Cause: three separate walks of the whole history (does the file have history, the renames, the commits), each finished before anything was shown. Now one
   `git log --follow --name-status` runs in a background thread and sends the commits as git prints them (`RecordStream` cuts the growing output into whole records,

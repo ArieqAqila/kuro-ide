@@ -610,6 +610,82 @@ pub mod pointer {
         assert!(b.msg.contains("no history for untracked.txt"), "{}", b.msg);
     }
 }
+mod inline_marks {
+    use super::*;
+
+    fn changed_repo() -> Repo {
+        let mut r = Repo::new();
+        r.write("v.txt", "name   INIT   \"20260710\"\nkeep   this   line\nsgm  tbtcab  lsgmstr1\n");
+        r.commit("first");
+        r.write("v.txt", "name   INIT   \"20260721\"\nkeep   this   line\nsgm  lM2W  lsgmstr1\n");
+        r.commit("second");
+        r
+    }
+
+    /// The text of the cells of row `y` that are in reverse video, in groups.
+    fn reversed_groups(buf: &Cells, y: u16) -> Vec<String> {
+        let mut groups: Vec<String> = vec![];
+        let mut open = false;
+        for x in 0..W {
+            let c = &buf[(x, y)];
+            if c.modifier.contains(Modifier::REVERSED) {
+                if !open {
+                    groups.push(String::new());
+                }
+                groups.last_mut().unwrap().push_str(c.symbol());
+                open = true;
+            } else {
+                open = false;
+            }
+        }
+        groups
+    }
+
+    #[test]
+    fn the_words_that_changed_inside_a_line_are_in_reverse_video_on_both_sides() {
+        let r = changed_repo();
+        let mut a = app(&r, None);
+        to_whole_diff(&mut a, 0);
+        let buf = draw(&mut a);
+        let s = rows(&mut a);
+        let minus = s.iter().position(|l| l.starts_with("-name")).unwrap() as u16;
+        let plus = s.iter().position(|l| l.starts_with("+name")).unwrap() as u16;
+        assert_eq!(reversed_groups(&buf, minus), vec!["10"], "{}", s.join("\n"));
+        assert_eq!(reversed_groups(&buf, plus), vec!["21"]);
+        let minus2 = s.iter().position(|l| l.starts_with("-sgm")).unwrap() as u16;
+        let plus2 = s.iter().position(|l| l.starts_with("+sgm")).unwrap() as u16;
+        assert_eq!(reversed_groups(&buf, minus2), vec!["tbtcab"]);
+        assert_eq!(reversed_groups(&buf, plus2), vec!["lM2W"]);
+        // the colour is the one of the line (green / red slots), and there is never a background
+        assert_eq!(buf[(1, minus)].fg, ratatui::style::Color::Red);
+        for y in [minus, plus] {
+            for x in 0..W {
+                assert_eq!(buf[(x, y)].bg, ratatui::style::Color::Reset, "no background at {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn unchanged_and_whole_new_lines_have_no_marks_and_the_view_scrolls_with_the_text() {
+        let r = changed_repo();
+        let mut a = app(&r, None);
+        to_whole_diff(&mut a, 0);
+        let buf = draw(&mut a);
+        let s = rows(&mut a);
+        let keep = s.iter().position(|l| l.starts_with(" keep")).unwrap() as u16;
+        assert!(reversed_groups(&buf, keep).is_empty());
+        // scrolled sideways, the marks move with their text and are cut at the edge
+        let plus = s.iter().position(|l| l.starts_with("+name")).unwrap() as u16;
+        let start = s[plus as usize].find("21\"").unwrap();
+        a.diff_left = start + 1; // the left half of `21` is out of view
+        let buf = draw(&mut a);
+        assert_eq!(reversed_groups(&buf, plus), vec!["1"], "only the visible part is marked");
+        a.diff_left = start + 2; // all of it is out of view
+        let buf = draw(&mut a);
+        assert!(reversed_groups(&buf, plus).is_empty());
+    }
+}
+
 mod keys_and_docs {
     use super::*;
 

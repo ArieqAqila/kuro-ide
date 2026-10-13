@@ -202,6 +202,22 @@ pub struct HistoryConfig {
     pub warn_mib: u64,
 }
 
+/// `kuro git`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GitConfig {
+    /// Keep a commit graph with changed-path filters in kuro's own cache folder, which makes the history of one file fast in big repositories.
+    pub graph_cache: bool,
+    /// Repositories with fewer commits than this do not get one (git is fast enough there).
+    pub graph_cache_min_commits: usize,
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self { graph_cache: true, graph_cache_min_commits: 5000 }
+    }
+}
+
 impl Default for HistoryConfig {
     fn default() -> Self {
         Self {
@@ -245,6 +261,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub sync: SyncConfig,
     pub history: HistoryConfig,
+    pub git: GitConfig,
     pub colors: ColorsConfig,
     /// Per-extension settings: `[ext.<name>]` (colour overrides under `colors`, and the settings an extension asks for).
     pub ext: BTreeMap<String, ExtConfig>,
@@ -348,6 +365,7 @@ impl Config {
             ui: section(&table, "ui", &mut warnings),
             sync: section(&table, "sync", &mut warnings),
             history: section(&table, "history", &mut warnings),
+            git: section(&table, "git", &mut warnings),
             colors: section(&table, "colors", &mut warnings),
             ext: section(&table, "ext", &mut warnings),
         };

@@ -250,6 +250,25 @@ A file with secrets in it is stored there too (as plain text), so keep `exclude`
 - When the history is bigger than this kuro says so once at start-up (`history uses 340 MiB: kuro history list`). It only tells you; it deletes nothing. `0` turns the message off.
 - **Example:** `warn_mib = 1000`
 
+## `[git]`
+
+`kuro git` (see [GIT.md](GIT.md)). In a repository with 100,000 commits, git needs many seconds to find the commits that touched one file. A *commit graph with
+changed-path filters* makes that about a hundred times faster, and kuro keeps one for you **outside the repository**, in `$XDG_CACHE_HOME/kuro/git/<id>/`
+(usually `~/.cache/kuro/git/`); the repository is never touched. It is built in the background the first time you open a file's history in a big repository
+(about 20 seconds of one CPU core for 100,000 commits, about 6 MiB of disk) and rebuilt in the background when it is more than a day old. Delete the folder at any time.
+
+### `git.graph_cache`
+- **Type:** boolean
+- **Default:** `true`
+- Build and use the cache described above. Off: kuro asks git for the file history directly (slower in big repositories) and writes nothing.
+- **Example:** `graph_cache = false`
+
+### `git.graph_cache_min_commits`
+- **Type:** integer
+- **Default:** `5000`
+- Repositories with fewer commits than this never get a cache.
+- **Example:** `graph_cache_min_commits = 20000`
+
 ## `[ext.<name>]`
 
 Per-extension settings, one table per installed extension (see [EXTENSIONS.md](EXTENSIONS.md)); not part of the option table above because the keys depend on the extension.

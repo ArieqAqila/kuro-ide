@@ -83,6 +83,9 @@ pub struct Git {
     pub top: PathBuf,
     /// Extra environment for every call (tests isolate git from the user's configuration with it).
     pub env: Vec<(String, String)>,
+    /// Where kuro keeps its commit-graph caches (`None`: no cache), and the repository size from which one is built.
+    pub cache_root: Option<PathBuf>,
+    pub cache_min_commits: usize,
 }
 
 const FIELD: char = '\u{1f}';
@@ -204,69 +207,223 @@ pub enum LogBatch {
     Done(Result<(), String>),
 }
 
-/// `git log --follow` running in the background: commits arrive as git finds them, so the list can be shown at once instead of
+/// A file's history being read in the background: commits arrive as git finds them, so the list can be shown at once instead of
 /// after the whole history was walked. Dropping it stops git.
 pub struct FileLog {
     pub rx: std::sync::mpsc::Receiver<LogBatch>,
-    child: std::sync::Arc<std::sync::Mutex<std::process::Child>>,
+    current: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Drop for FileLog {
     fn drop(&mut self) {
-        if let Ok(mut c) = self.child.lock() {
-            let _ = c.kill();
-            let _ = c.wait();
+        self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut c) = self.current.lock()
+            && let Some(child) = c.as_mut()
+        {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
 
-impl Git {
-    /// Start reading the history of `path` (renames followed) in the background.
-    pub fn spawn_file_log(&self, path: &str) -> Result<FileLog, GitError> {
-        use std::io::Read;
-        let format = format!("--format={LOG_FORMAT}");
-        let mut cmd = git_command(
-            &self.top,
-            &self.env,
-            &["log", "--follow", "--name-status", "-M", "-z", "--date=format:%Y-%m-%d %H:%M", &format, "--", path],
-        );
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { GitError::NoGit } else { GitError::Failed(e.to_string()) })?;
+type Shared = std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>;
+
+/// Does the work of [`Git::spawn_file_log`] on its thread.
+fn follow_worker(
+    top: &Path,
+    env: &[(String, String)],
+    plain_env: &[(String, String)],
+    first_path: String,
+    current: &Shared,
+    stop: &std::sync::atomic::AtomicBool,
+    tx: &std::sync::mpsc::Sender<LogBatch>,
+) -> Result<(), String> {
+    use std::io::Read;
+    use std::sync::atomic::Ordering::Relaxed;
+    let format = format!("--format={LOG_FORMAT}");
+    let mut path = first_path;
+    let mut upto: Option<String> = None;
+    'path: loop {
+        let mut args = vec!["log", "--name-status", "-z", "--date=format:%Y-%m-%d %H:%M", &format];
+        if let Some(u) = &upto {
+            args.push(u);
+        }
+        args.push("--");
+        args.push(&path);
+        let mut cmd = git_command(top, env, &args);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
         let mut stdout = child.stdout.take().expect("piped");
         let mut stderr = child.stderr.take().expect("piped");
-        let child = std::sync::Arc::new(std::sync::Mutex::new(child));
-        let (tx, rx) = std::sync::mpsc::channel();
-        let waiter = child.clone();
-        std::thread::spawn(move || {
-            let mut stream = RecordStream::default();
-            let mut chunk = [0u8; 16 * 1024];
-            loop {
-                match stdout.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        let items = stream.push(&chunk[..n]);
-                        if !items.is_empty() && tx.send(LogBatch::Items(items)).is_err() {
-                            return; // nobody is listening any more
+        *current.lock().map_err(|e| e.to_string())? = Some(child);
+        let mut stream = RecordStream::default();
+        let mut chunk = [0u8; 16 * 1024];
+        let mut eof = false;
+        while !eof {
+            let items = match stdout.read(&mut chunk) {
+                Ok(0) | Err(_) => {
+                    eof = true;
+                    stream.finish()
+                }
+                Ok(n) => stream.push(&chunk[..n]),
+            };
+            if stop.load(Relaxed) {
+                return Ok(());
+            }
+            let mut out: Vec<(Commit, Option<Change>)> = vec![];
+            for (commit, change) in items {
+                // a path that did not exist in the parent: was it renamed from another path?
+                let added = change.as_ref().is_some_and(|c| c.status == 'A');
+                let renamed = if added && !commit.parents.is_empty() { rename_source(top, plain_env, &commit.hash, &path) } else { None };
+                match renamed {
+                    Some((old, score)) => {
+                        out.push((
+                            commit.clone(),
+                            Some(Change { status: 'R', path: path.clone(), old_path: Some(old.clone()), score: Some(score) }),
+                        ));
+                        if !out.is_empty() && tx.send(LogBatch::Items(std::mem::take(&mut out))).is_err() {
+                            return Ok(());
                         }
+                        // older commits of this listing belong to the old name's own history: stop here and continue from the parent
+                        if let Some(mut c) = current.lock().ok().and_then(|mut g| g.take()) {
+                            let _ = c.kill();
+                            let _ = c.wait();
+                        }
+                        upto = Some(format!("{}^", commit.hash));
+                        path = old;
+                        continue 'path;
                     }
+                    None => out.push((commit, change)),
                 }
             }
-            let items = stream.finish();
-            if !items.is_empty() && tx.send(LogBatch::Items(items)).is_err() {
-                return;
+            if !out.is_empty() && tx.send(LogBatch::Items(out)).is_err() {
+                return Ok(());
             }
-            let mut err = String::new();
-            let _ = stderr.read_to_string(&mut err);
-            let ok = waiter.lock().ok().and_then(|mut c| c.wait().ok()).is_some_and(|s| s.success());
-            let _ = tx.send(LogBatch::Done(if ok { Ok(()) } else { Err(err.trim().to_string()) }));
+        }
+        let mut err = String::new();
+        let _ = stderr.read_to_string(&mut err);
+        let ok = current.lock().ok().and_then(|mut g| g.take()).and_then(|mut c| c.wait().ok()).is_some_and(|s| s.success());
+        return if ok || stop.load(Relaxed) { Ok(()) } else { Err(err.trim().to_string()) };
+    }
+}
+
+/// If `path` came into being in `commit` by a rename (or copy) from another path: that path and the similarity.
+fn rename_source(top: &Path, env: &[(String, String)], commit: &str, path: &str) -> Option<(String, u8)> {
+    let parent = format!("{commit}^");
+    let out = run_in(top, env, &["diff-tree", "-r", "-M", "--name-status", "-z", &parent, commit]).ok()?;
+    parse_name_status(&text(out)).into_iter().find(|c| c.path == path && matches!(c.status, 'R' | 'C')).and_then(|c| {
+        let score = c.score.unwrap_or(0);
+        c.old_path.map(|o| (o, score))
+    })
+}
+
+impl Git {
+    // ------------------------------------------------------------------------------------------ commit-graph cache
+
+    /// The folder of this repository's cache: `<cache root>/<id of the repository's path>`.
+    pub fn graph_dir(&self) -> Option<PathBuf> {
+        let root = self.cache_root.as_ref()?;
+        let id = crate::history::key_of(&self.top);
+        Some(root.join(id))
+    }
+
+    /// The repository's object folder (where the real objects stay; the cache only holds the commit graph).
+    fn objects_dir(&self) -> Option<PathBuf> {
+        let out = self.run(&["rev-parse", "--path-format=absolute", "--git-path", "objects"]).ok()?;
+        let p = PathBuf::from(text(out).trim());
+        p.is_dir().then_some(p)
+    }
+
+    /// The environment that makes git read kuro's commit graph, once there is one: the cache folder becomes the primary object folder
+    /// (git takes the commit graph of the first folder that has one) and the repository's own objects are its alternate. Nothing is
+    /// ever written to either from here.
+    pub fn graph_env(&self) -> Vec<(String, String)> {
+        let (Some(dir), Some(objects)) = (self.graph_dir(), self.objects_dir()) else { return vec![] };
+        if !dir.join("info/commit-graph").is_file() {
+            return vec![];
+        }
+        vec![
+            ("GIT_OBJECT_DIRECTORY".into(), dir.display().to_string()),
+            ("GIT_ALTERNATE_OBJECT_DIRECTORIES".into(), objects.display().to_string()),
+        ]
+    }
+
+    /// Build (or refresh) the commit graph with changed-path filters in the background when the repository is big enough and the cache
+    /// is missing or older than a day. Never touches the repository; at most one build runs at a time.
+    pub fn ensure_graph_in_background(&self) {
+        let Some(dir) = self.graph_dir() else { return };
+        let graph = dir.join("info/commit-graph");
+        let fresh = std::fs::metadata(&graph)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 3600));
+        if fresh {
+            return;
+        }
+        let big = self
+            .run(&["rev-list", "--count", &format!("--max-count={}", self.cache_min_commits + 1), "HEAD"])
+            .ok()
+            .and_then(|o| text(o).trim().parse::<usize>().ok())
+            .is_some_and(|n| n > self.cache_min_commits);
+        let Some(objects) = self.objects_dir() else { return };
+        if !big || std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        // one builder at a time (also across kuro processes); a lock older than ten minutes is left over from a crash
+        let lock = dir.join("building");
+        if let Ok(m) = std::fs::metadata(&lock)
+            && m.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > std::time::Duration::from_secs(600))
+        {
+            let _ = std::fs::remove_file(&lock);
+        }
+        if std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).is_err() {
+            return;
+        }
+        let (top, mut env) = (self.top.clone(), self.env.clone());
+        env.push(("GIT_OBJECT_DIRECTORY".into(), dir.display().to_string()));
+        env.push(("GIT_ALTERNATE_OBJECT_DIRECTORIES".into(), objects.display().to_string()));
+        std::thread::spawn(move || {
+            let mut cmd = git_command(&top, &env, &["commit-graph", "write", "--reachable", "--changed-paths"]);
+            let _ = cmd.output();
+            let _ = std::fs::remove_file(&lock);
         });
-        Ok(FileLog { rx, child })
+    }
+
+    /// Start reading the history of `path` (renames followed) in the background.
+    ///
+    /// Git's own `log --follow` walks the whole history and cannot use a commit graph's changed-path filters, which takes many seconds
+    /// in a big repository. kuro does what it does in two steps that can: `log -- <path>` lists the commits that touched the path (fast
+    /// with the filters, and it streams), and wherever the path was *added* in a commit, one `diff-tree -M` asks whether it was renamed
+    /// from another path; if so the history continues from that commit's parent under the old name, exactly where `--follow` switches.
+    pub fn spawn_file_log(&self, path: &str) -> Result<FileLog, GitError> {
+        let env = {
+            let mut e = self.env.clone();
+            e.extend(self.graph_env());
+            e
+        };
+        let (top, plain_env) = (self.top.clone(), self.env.clone());
+        let current: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>> = Default::default();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (cur, stop) = (current.clone(), cancel.clone());
+        // a missing `git` is reported now, not from the thread
+        if let Err(GitError::NoGit) = run_in(&top, &plain_env, &["--version"]) {
+            return Err(GitError::NoGit);
+        }
+        let path = path.to_string();
+        std::thread::spawn(move || {
+            let result = follow_worker(&top, &env, &plain_env, path, &cur, &stop, &tx);
+            if !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let _ = tx.send(LogBatch::Done(result));
+            }
+        });
+        Ok(FileLog { rx, current, cancel })
     }
 
     pub fn open(dir: &Path, env: Vec<(String, String)>) -> Result<Git, GitError> {
         let top = toplevel(dir, &env)?;
-        Ok(Git { top, env })
+        Ok(Git { top, env, cache_root: None, cache_min_commits: 5000 })
     }
 
     fn run(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {

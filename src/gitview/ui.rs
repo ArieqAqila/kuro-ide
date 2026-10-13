@@ -280,5 +280,12 @@ fn draw_diff(app: &GitApp, buf: &mut Buffer, r: Rect) {
         let style = diff_style(app, line);
         let shown = slice_cols(line, app.diff_left, r.width as usize);
         buf.set_stringn(r.x, r.y + i as u16, &shown, r.width as usize, style);
+        // the words that changed inside a changed line: reverse video (never a background colour), only the part in view
+        for &(s, e) in app.diff_marks.get(idx).map(|m| m.as_slice()).unwrap_or(&[]) {
+            let (s, e) = (s.max(app.diff_left), e.min(app.diff_left + r.width as usize));
+            if s < e {
+                buf.set_style(Rect::new(r.x + (s - app.diff_left) as u16, r.y + i as u16, (e - s) as u16, 1), Modifier::REVERSED);
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@
 //! are in [`cmd`] and are read-only.
 
 pub mod cmd;
+mod inline;
 mod ui;
 
 use crate::clipboard::Clipboard;
@@ -114,6 +115,8 @@ pub struct GitApp {
     pub detail: Option<Detail>,
     pub files_scroll: Scroll,
     pub diff: Vec<String>,
+    /// For each diff line the cells where the change inside the line is (see `inline`), drawn in reverse video.
+    pub diff_marks: Vec<Vec<(usize, usize)>>,
     pub diff_title: String,
     /// The file of the diff, as (old path, new path), or `None` for the whole commit.
     pub diff_file: Option<(Option<String>, String)>,
@@ -134,13 +137,26 @@ pub struct GitApp {
     loader: Option<cmd::FileLog>,
 }
 
+/// `$XDG_CACHE_HOME/kuro/git` (`~/.cache/kuro/git`).
+fn cache_root() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))?;
+    Some(base.join("kuro/git"))
+}
+
 fn text_lines(s: &str) -> Vec<String> {
     s.lines().map(|l| l.replace('\t', "    ").replace('\r', "")).collect()
 }
 
 impl GitApp {
     /// Open the repository containing the current directory (`file`: start in that file's history).
-    pub fn new(git: Git, cfg: Config, file: Option<String>) -> Result<GitApp, GitError> {
+    pub fn new(mut git: Git, cfg: Config, file: Option<String>) -> Result<GitApp, GitError> {
+        if cfg.git.graph_cache {
+            git.cache_root = cache_root();
+            git.cache_min_commits = cfg.git.graph_cache_min_commits;
+        }
         let head = git.head()?;
         let files = git.tree()?;
         let make_clipboard: ClipboardFactory = Box::new(|c: &Config| crate::clipboard::detect(&c.clipboard.backend));
@@ -164,6 +180,7 @@ impl GitApp {
             detail: None,
             files_scroll: Scroll::default(),
             diff: vec![],
+            diff_marks: vec![],
             diff_title: String::new(),
             diff_file: None,
             diff_top: 0,
@@ -273,6 +290,8 @@ impl GitApp {
         self.view = View::History;
         self.back = vec![View::Tree];
         self.loader = None;
+        // a big repository gets a commit graph in kuro's cache, for the next time (a no-op when it is there, or not needed)
+        self.git.ensure_graph_in_background();
         match self.git.spawn_file_log(path) {
             Ok(l) => self.loader = Some(l),
             Err(e) => {
@@ -392,6 +411,7 @@ impl GitApp {
                 if self.diff.is_empty() {
                     self.diff = vec!["(no textual changes)".into()];
                 }
+                self.diff_marks = inline::marks(&self.diff);
                 self.diff_title = match &file {
                     Some((_, p)) => format!("{} {}  {}", commit.short, p, commit.subject),
                     None => format!("{}  {}", commit.short, commit.subject),

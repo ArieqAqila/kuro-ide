@@ -139,6 +139,7 @@ impl Pty {
         cmd.env("XDG_RUNTIME_DIR", dir.join("run"));
         cmd.env("XDG_STATE_HOME", dir.join("state"));
         cmd.env("XDG_DATA_HOME", dir.join("data"));
+        cmd.env("XDG_CACHE_HOME", dir.join("cache"));
         cmd.env_remove("WAYLAND_DISPLAY");
         cmd.env_remove("DISPLAY");
         for (k, v) in env {

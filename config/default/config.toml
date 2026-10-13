@@ -49,6 +49,10 @@ max_file_mib = 5            # bigger files are not recorded
 exclude = ["*.env", ".env*", "*.pem", "*.key", "id_*"]   # file names that are never recorded
 warn_mib = 200              # tell me at start-up when the history is bigger than this (0: never); nothing is deleted automatically
 
+[git]
+graph_cache = true               # kuro git: keep a commit graph in ~/.cache/kuro/git (never inside the repository): file history in big repositories gets much faster
+graph_cache_min_commits = 5000   # smaller repositories do not need one
+
 [colors]
 # Roles -> ANSI palette slot: 0-7 normal, 8-15 bright, -1 = default foreground.
 # The real colours come from your terminal theme.

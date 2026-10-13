@@ -245,3 +245,185 @@ fn a_repository_cannot_make_kuro_run_its_configured_programs() {
     assert!(g.changes(c).is_ok());
     assert!(!marker.exists(), "the configured diff.external / textconv program ran");
 }
+
+// ----------------------------------------------------------------------------------------------- file history: kuro's way against `git log --follow`
+
+/// What git's own `--follow` says for `path`: subjects and, per commit, the path the file had.
+fn follow_reference(r: &Repo, path: &str) -> Vec<String> {
+    r.git(&["log", "--follow", "--format=%s", "--", path]).lines().map(String::from).collect()
+}
+
+fn ours(g: &kuro::gitview::cmd::Git, path: &str) -> Vec<String> {
+    g.file_history(path, 1000).unwrap().into_iter().map(|(c, _)| c.subject).collect()
+}
+
+#[test]
+fn the_file_history_equals_git_follow_for_renames_chains_readds_and_edits() {
+    let mut r = Repo::new();
+    let body = lines(60, "chain");
+    r.write("a.txt", &body);
+    r.commit("add a");
+    r.write("a.txt", &format!("{body}more\n"));
+    r.commit("edit a");
+    r.git(&["mv", "a.txt", "b.txt"]);
+    r.commit("rename a to b");
+    r.write("b.txt", &format!("{body}more\nmore still\n"));
+    r.commit("edit b");
+    r.git(&["mv", "b.txt", "dir_c.txt"]);
+    r.commit("rename b to c");
+    // an unrelated file with the same start, and the old name coming back as a new file
+    r.write("a.txt", "something else entirely\n");
+    r.commit("a.txt is a new file now");
+    r.write("dir_c.txt", &format!("{body}more\nmore still\nand more\n"));
+    r.commit("edit c");
+    // a rename with a change in the same commit
+    r.git(&["mv", "dir_c.txt", "final.txt"]);
+    r.write("final.txt", &format!("{body}more\nmore still\nand more\nplus\n"));
+    r.commit("rename c to final and edit");
+    let g = r.open();
+    for path in ["final.txt", "dir_c.txt", "b.txt", "a.txt"] {
+        assert_eq!(ours(&g, path), follow_reference(&r, path), "history of {path}");
+    }
+    let all = g.file_history("final.txt", 100).unwrap();
+    let renames: Vec<_> = all
+        .iter()
+        .filter_map(|(_, c)| c.as_ref())
+        .filter(|c| c.status == 'R')
+        .map(|c| (c.old_path.clone().unwrap(), c.path.clone()))
+        .collect();
+    // the path in a rename entry is the name the file had in the history being followed at that moment
+    assert_eq!(renames.len(), 3, "{renames:?}");
+    assert_eq!(renames[0].0, "dir_c.txt");
+}
+
+#[test]
+fn a_deleted_and_recreated_file_keeps_both_lives_like_git_follow() {
+    let mut r = Repo::new();
+    r.write("x.txt", &lines(30, "x"));
+    r.commit("add x");
+    r.git(&["rm", "-q", "x.txt"]);
+    r.commit("delete x");
+    r.write("x.txt", &lines(30, "reborn"));
+    r.commit("add x again");
+    let g = r.open();
+    assert_eq!(ours(&g, "x.txt"), follow_reference(&r, "x.txt"));
+    assert_eq!(ours(&g, "x.txt").len(), 3);
+}
+
+#[test]
+fn a_file_that_never_existed_has_an_empty_history_and_the_reading_ends() {
+    let mut r = Repo::new();
+    r.write("x.txt", "1\n");
+    r.commit("x");
+    assert!(r.open().file_history("nope.txt", 10).unwrap().is_empty());
+}
+
+#[test]
+fn a_rename_on_a_merged_branch_is_followed() {
+    let mut r = Repo::new();
+    let body = lines(50, "merge");
+    r.write("m.txt", &body);
+    r.commit("add m");
+    r.git(&["checkout", "-q", "-b", "side"]);
+    r.git(&["mv", "m.txt", "m2.txt"]);
+    r.commit("rename on the side branch");
+    r.git(&["checkout", "-q", "main"]);
+    r.write("other.txt", "o\n");
+    r.commit("main moves on");
+    r.git(&["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+    let g = r.open();
+    assert_eq!(ours(&g, "m2.txt"), follow_reference(&r, "m2.txt"));
+}
+
+// ----------------------------------------------------------------------------------------------- the commit-graph cache
+
+fn objects_listing(r: &Repo) -> Vec<String> {
+    let mut v: Vec<String> = walk(&r.path().join(".git/objects"));
+    v.sort();
+    v
+}
+
+fn walk(p: &std::path::Path) -> Vec<String> {
+    let mut out = vec![];
+    if let Ok(rd) = std::fs::read_dir(p) {
+        for e in rd.flatten() {
+            let path = e.path();
+            out.push(path.display().to_string());
+            if path.is_dir() {
+                out.extend(walk(&path));
+            }
+        }
+    }
+    out
+}
+
+fn wait_for_graph(g: &kuro::gitview::cmd::Git) {
+    let dir = g.graph_dir().unwrap();
+    let start = std::time::Instant::now();
+    while (!dir.join("info/commit-graph").is_file() || dir.join("building").exists()) && start.elapsed().as_secs() < 30 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_big_enough_repository_gets_a_graph_in_the_cache_and_the_repository_is_not_touched() {
+    let mut r = Repo::new();
+    r.many_commits(40);
+    let cache = tempfile::tempdir().unwrap();
+    let before = objects_listing(&r);
+    let mut g = r.open();
+    g.cache_root = Some(cache.path().to_path_buf());
+    g.cache_min_commits = 10;
+    assert!(g.graph_env().is_empty(), "no graph yet: git is used as it is");
+    let plain = ours(&g, "count.txt");
+    g.ensure_graph_in_background();
+    wait_for_graph(&g);
+    let dir = g.graph_dir().unwrap();
+    assert!(dir.join("info/commit-graph").is_file(), "built in the cache folder");
+    assert!(!dir.join("building").exists(), "the lock is gone");
+    assert_eq!(objects_listing(&r), before, "nothing was added to the repository");
+    let env = g.graph_env();
+    assert_eq!(env.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]);
+    assert_eq!(ours(&g, "count.txt"), plain, "the same history with the cache");
+    assert_eq!(plain.len(), 40);
+}
+
+#[test]
+fn small_repositories_and_a_switched_off_cache_build_nothing() {
+    let mut r = Repo::new();
+    r.many_commits(5);
+    let cache = tempfile::tempdir().unwrap();
+    let mut g = r.open();
+    g.cache_root = Some(cache.path().to_path_buf());
+    g.cache_min_commits = 100;
+    g.ensure_graph_in_background();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!g.graph_dir().unwrap().exists(), "too small: no folder at all");
+    let mut off = r.open();
+    off.cache_min_commits = 1;
+    off.ensure_graph_in_background(); // no cache root: nothing happens
+    assert!(off.graph_dir().is_none() && off.graph_env().is_empty());
+}
+
+#[test]
+fn a_second_build_is_not_started_while_one_runs_and_a_fresh_cache_is_left_alone() {
+    let mut r = Repo::new();
+    r.many_commits(30);
+    let cache = tempfile::tempdir().unwrap();
+    let mut g = r.open();
+    g.cache_root = Some(cache.path().to_path_buf());
+    g.cache_min_commits = 10;
+    let dir = g.graph_dir().unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("building"), "").unwrap(); // another kuro is building
+    g.ensure_graph_in_background();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!dir.join("info/commit-graph").exists(), "the lock is respected");
+    std::fs::remove_file(dir.join("building")).unwrap();
+    g.ensure_graph_in_background();
+    wait_for_graph(&g);
+    let built = std::fs::metadata(dir.join("info/commit-graph")).unwrap().modified().unwrap();
+    g.ensure_graph_in_background(); // fresh (less than a day old): untouched
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(std::fs::metadata(dir.join("info/commit-graph")).unwrap().modified().unwrap(), built);
+}

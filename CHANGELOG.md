@@ -7,6 +7,8 @@ Short version. Every change in full: [docs/CHANGELOG-DETAILED.md](docs/CHANGELOG
 ## [Unreleased]
 
 ### Changed
+- `kuro git` diffs mark **what changed inside a line** (reverse video on the words that differ, on the removed and the added line).
+- `kuro git` is much faster on big repositories: a file's history no longer uses `git log --follow`, builds a commit graph in `~/.cache/kuro/git` (never in the repository; `[git] graph_cache`), and on a 108,000-commit repository the first commit appears after 0.14 s (0.9 s the first time) instead of 28 s.
 - `kuro git`: a file's history opens at once and fills in while git is still reading, like gitk (on a repository of 100,000 commits the first commit appears after about a second instead of after 30 seconds); it is read in one pass instead of three; leaving the history stops git. `docs/GIT.md` explains how to speed git up with a commit graph.
 - `kuro git` outside a repository now prints `this directory is not in a git repository` (it was an Indonesian message, `direktori tidak ada git`); exit status 128 as before.
 
