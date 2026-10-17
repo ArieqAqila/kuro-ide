@@ -183,6 +183,12 @@ Initial state of the find-bar toggles (they can still be flipped with Alt+C / Al
 - In a SQL buffer with no database connection kuro stays in Normal mode, refuses edits and Insert mode, and shows "Not connected to a database. Use :connect <profile>". Inserting a snippet is still allowed. `false` lets you edit SQL files offline.
 - **Example:** `block_editing_when_disconnected = false`
 
+### `sql.auto_connect`
+- **Type:** string (a profile name from the connections file)
+- **Default:** `""`
+- The first time a SQL buffer is shown and no connection exists, kuro runs `:connect` with this profile by itself. A profile with `password = "prompt"` asks for the password then, exactly as `:connect` would. It is tried once per kuro session, so after `:disconnect` or a failed connect it does not try again; use `:connect` yourself. Empty means never.
+- **Example:** `auto_connect = "local_maria"`
+
 ## `[ui]`
 
 ### `ui.syntax_highlight`

@@ -94,6 +94,8 @@ pub struct SqlConfig {
     pub run_line_key: String,
     /// In a SQL buffer, refuse edits (and Insert mode) until a database connection exists.
     pub block_editing_when_disconnected: bool,
+    /// Profile to connect to by itself the first time a SQL buffer is shown. Empty = never.
+    pub auto_connect: String,
 }
 
 impl Default for SqlConfig {
@@ -108,6 +110,7 @@ impl Default for SqlConfig {
             run_fallback_key: "alt+enter".into(),
             run_line_key: "alt+l".into(),
             block_editing_when_disconnected: true,
+            auto_connect: String::new(),
         }
     }
 }

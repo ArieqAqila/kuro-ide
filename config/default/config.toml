@@ -33,6 +33,7 @@ connections_file = ""     # empty = <config dir>/connections.toml
 run_fallback_key = "alt+enter"   # runs the selection/statement when the terminal cannot send Ctrl+Enter
 run_line_key = "alt+l"            # runs only the current line
 block_editing_when_disconnected = true
+auto_connect = ""        # profile to connect to when a SQL file is opened; empty = never
 
 [ui]
 syntax_highlight = true

@@ -214,6 +214,8 @@ pub struct App {
     /// Buffer version the popup was last evaluated at: it only *opens* because of an edit (typing).
     suggest_seen: u64,
     pub sql: SqlUi,
+    /// `sql.auto_connect` was tried already (once per session).
+    auto_connect_tried: bool,
     /// Prompted passwords kept for this session only (memory, never disk).
     pub passwords: PasswordCache,
     connector: Connector,
@@ -352,6 +354,7 @@ impl App {
             suggest_dismissed: None,
             suggest_seen: 0,
             sql: SqlUi::default(),
+            auto_connect_tried: false,
             passwords: PasswordCache::default(),
             connector: std::sync::Arc::new(sql::connect),
             warnings: vec![],
@@ -365,6 +368,23 @@ impl App {
             .unwrap_or_else(|| syntax::detect_in(&self.ext_langs, self.buffer.path.as_deref(), &first_line(&self.buffer)));
         self.refresh_ext_styles();
         self.maybe_kitty_notice();
+        self.maybe_auto_connect();
+    }
+
+    /// `sql.auto_connect`: the first time a SQL buffer is shown without a connection, connect to that profile.
+    fn maybe_auto_connect(&mut self) {
+        let name = self.cfg.sql.auto_connect.trim().to_string();
+        if name.is_empty()
+            || self.auto_connect_tried
+            || self.lang.name != syntax::SQL.name
+            || self.sql.session.is_some()
+            || self.sql.connecting.is_some()
+            || self.prompt.is_some()
+        {
+            return;
+        }
+        self.auto_connect_tried = true;
+        self.sql_connect(&name);
     }
 
     /// Read the files the user listed for this language's `names_from` (once), e.g. ksystem's table headers.
